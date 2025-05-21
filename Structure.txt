@@ -1,0 +1,242 @@
+Структура продвинутого десктопного приложения для Claude API
+Вот подробная структура для десктопного приложения, повторяющего функционал веб-версии Claude:
+Основная структура проекта (на базе Electron + React)
+claude-desktop/
+│   .env
+│   .gitignore
+│   electron-builder.json
+│   package.json
+│   README.md
+│   Structure.txt
+│
+├───assets
+│       icon.icns
+│       icon.ico
+│       icon.png
+│
+├───db
+│       schema.sql
+│
+├───electron
+│   │   main.js
+│   │   preload.js
+│   │
+│   └───ipc
+│           api.js
+│           files.js
+│           storage.js
+│
+├───public
+│       electron.js
+│       favicon.ico
+│       index.html
+│       manifest.json
+│       preload.js
+│
+├───scripts
+│       copy-electron.js
+│
+├───src
+│   │   App.jsx
+│   │   index.jsx
+│   │
+│   ├───assets
+│   ├───components
+│   │   ├───Artifacts
+│   │   │       ArtifactRenderer.jsx
+│   │   │       CodeArtifact.jsx
+│   │   │       MarkdownArtifact.jsx
+│   │   │       ReactArtifact.jsx
+│   │   │       SVGArtifact.jsx
+│   │   │
+│   │   ├───Chat
+│   │   │       ChatList.jsx
+│   │   │       ChatView.jsx
+│   │   │       ExportDialog.jsx
+│   │   │       InputArea.jsx
+│   │   │       MessageActions.jsx
+│   │   │       MessageItem.jsx
+│   │   │       MessageList.jsx
+│   │   │       SearchDialog.jsx
+│   │   │
+│   │   ├───Common
+│   │   │       Button.jsx
+│   │   │       FileUploader.jsx
+│   │   │       Modal.jsx
+│   │   │
+│   │   ├───Layout
+│   │   │       MainLayout.jsx
+│   │   │       Sidebar.jsx
+│   │   │
+│   │   ├───Projects
+│   │   │       FileManager.jsx
+│   │   │       ProjectList.jsx
+│   │   │       ProjectView.jsx
+│   │   │
+│   │   ├───Settings
+│   │   │       SettingsDialog.jsx
+│   │   │
+│   │   └───setup
+│   │           ApiKeySetup.jsx
+│   │
+│   ├───contexts
+│   │       AuthContext.jsx
+│   │       ChatContext.jsx
+│   │       ProjectContext.jsx
+│   │
+│   ├───hooks
+│   │       useClaudeAPI.js
+│   │       useFileProcessor.js
+│   │       useLocalStorage.js
+│   │
+│   ├───services
+│   │   ├───api
+│   │   │       claude.js
+│   │   │       utils.js
+│   │   │
+│   │   ├───parser
+│   │   │       artifactParser.js
+│   │   │       messageParser.js
+│   │   │
+│   │   └───storage
+│   │           database.js
+│   │           fileSystem.js
+│   │
+│   ├───styles
+│   │   │   global.css
+│   │   │   theme.js
+│   │   │
+│   │   └───themes
+│   │           dark.css
+│   │           light.css
+│   │
+│   └───utils
+│           formatters.js
+│           validators.js
+│
+└───storage
+    ├───artifacts
+    ├───chats
+    ├───files
+    └───projects
+
+Структура базы данных (SQLite)
+sql-- Пользователи (настройки и API ключи)
+CREATE TABLE users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    api_key TEXT ENCRYPTED,
+    settings TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Чаты
+CREATE TABLE chats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_archived BOOLEAN DEFAULT 0
+);
+
+-- Сообщения
+CREATE TABLE messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id INTEGER,
+    role TEXT, -- 'user' или 'assistant'
+    content TEXT,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
+);
+
+-- Проекты
+CREATE TABLE projects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_archived BOOLEAN DEFAULT 0
+);
+
+-- Файлы проектов
+CREATE TABLE project_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER,
+    name TEXT,
+    path TEXT,
+    type TEXT,
+    size INTEGER,
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+-- Артефакты
+CREATE TABLE artifacts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id INTEGER,
+    type TEXT,
+    title TEXT,
+    content TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+);
+
+-- Загруженные файлы в чатах
+CREATE TABLE chat_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id INTEGER,
+    name TEXT,
+    path TEXT,
+    type TEXT,
+    size INTEGER,
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+);
+
+Ключевые компоненты приложения
+1. Основной процесс Electron (main.js)
+
+Создание окна приложения
+Обработка API ключа и хранение
+Работа с файловой системой
+Регистрация обработчиков IPC
+
+2. Управление API (claude.js)
+
+Аутентификация с API ключом
+Отправка запросов к Claude
+Управление форматами ответов
+Обработка файлов для API
+
+3. Хранилище данных (database.js)
+
+Инициализация SQLite
+CRUD-операции для чатов/проектов
+Кеширование истории сообщений
+Управление артефактами
+
+4. Управление файлами (fileSystem.js)
+
+Загрузка и сохранение файлов
+Кеширование файлов для повторного использования
+Подготовка файлов для API Claude
+Скачивание артефактов и файлов
+
+5. Парсер артефактов (artifactParser.js)
+
+Обработка XML-разметки артефактов
+Извлечение метаданных и содержимого
+Подготовка к отображению
+
+6. Интерфейс чата (ChatView.jsx)
+
+Отображение истории сообщений
+Рендеринг артефактов
+Обработка ввода пользователя
+Загрузка и отображение файлов
+
+7. Менеджер проектов (ProjectView.jsx)
+
+Управление контекстными файлами
+Создание и редактирование проектов
+Интеграция файлов с чатами

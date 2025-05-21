@@ -1,0 +1,295 @@
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const path = require('path');
+const fs = require('fs');
+const url = require('url');
+const Store = require('electron-store');
+const crypto = require('crypto');
+
+// Настройка шифрования для API ключа
+const ENCRYPTION_KEY = crypto.scryptSync('claude-desktop-secret', 'salt', 32);
+const IV_LENGTH = 16;
+
+// Настройка хранилища
+const store = new Store({
+  name: 'claude-desktop-config'
+});
+
+// Определяем, в каком режиме работает приложение
+const isDev = !app.isPackaged;
+
+console.log('Режим приложения:', isDev ? 'Разработка' : 'Продакшен');
+console.log('__dirname:', __dirname);
+console.log('app.getAppPath():', app.getAppPath());
+
+// Основное окно приложения
+let mainWindow;
+
+// Функция для безопасного подключения модулей IPC
+function loadIPCHandlers() {
+  try {
+    let ipcBasePath;
+    
+    if (isDev) {
+      // В режиме разработки
+      ipcBasePath = path.join(__dirname, 'ipc');
+    } else {
+      // В продакшене - ищем в разных возможных местах
+      const possiblePaths = [
+        path.join(__dirname, 'ipc'),
+        path.join(__dirname, 'electron', 'ipc'),
+        path.join(app.getAppPath(), 'electron', 'ipc'),
+        path.join(app.getAppPath(), 'build', 'electron', 'ipc')
+      ];
+      
+      for (const testPath of possiblePaths) {
+        console.log('Проверяем путь к IPC:', testPath);
+        if (fs.existsSync(path.join(testPath, 'api.js'))) {
+          ipcBasePath = testPath;
+          console.log('Найден путь к IPC модулям:', ipcBasePath);
+          break;
+        }
+      }
+      
+      if (!ipcBasePath) {
+        console.error('Не найдены IPC модули');
+        // Создаем заглушки
+        return {
+          apiHandlers: { register: () => console.log('API обработчики недоступны') },
+          fileHandlers: { register: () => console.log('File обработчики недоступны') },
+          storageHandlers: { register: () => console.log('Storage обработчики недоступны') }
+        };
+      }
+    }
+    
+    const apiHandlers = require(path.join(ipcBasePath, 'api'));
+    const fileHandlers = require(path.join(ipcBasePath, 'files'));
+    const storageHandlers = require(path.join(ipcBasePath, 'storage'));
+    
+    console.log('IPC модули загружены успешно');
+    return { apiHandlers, fileHandlers, storageHandlers };
+  } catch (error) {
+    console.error('Ошибка загрузки IPC модулей:', error);
+    // Создаем заглушки для IPC обработчиков
+    return {
+      apiHandlers: { register: () => console.log('API обработчики недоступны') },
+      fileHandlers: { register: () => console.log('File обработчики недоступны') },
+      storageHandlers: { register: () => console.log('Storage обработчики недоступны') }
+    };
+  }
+}
+
+// Создание директорий хранения при необходимости
+function ensureDirectories() {
+  const userDataPath = app.getPath('userData');
+  const dirs = [
+    path.join(userDataPath, 'storage'),
+    path.join(userDataPath, 'storage/chats'),
+    path.join(userDataPath, 'storage/projects'),
+    path.join(userDataPath, 'storage/files'),
+    path.join(userDataPath, 'storage/artifacts'),
+    path.join(userDataPath, 'db')
+  ];
+
+  dirs.forEach(dir => {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+      console.log(`Создана директория: ${dir}`);
+    }
+  });
+}
+
+// Создание главного окна
+function createWindow() {
+  ensureDirectories();
+
+  // Определяем путь к preload скрипту
+  let preloadPath;
+  if (isDev) {
+    preloadPath = path.join(__dirname, 'preload.js');
+  } else {
+    // В продакшене ищем preload в разных местах
+    const possiblePreloadPaths = [
+      path.join(__dirname, 'preload.js'),
+      path.join(app.getAppPath(), 'build', 'preload.js'),
+      path.join(app.getAppPath(), 'electron', 'preload.js')
+    ];
+    
+    for (const testPath of possiblePreloadPaths) {
+      console.log('Проверяем preload:', testPath);
+      if (fs.existsSync(testPath)) {
+        preloadPath = testPath;
+        console.log('Найден preload скрипт:', preloadPath);
+        break;
+      }
+    }
+    
+    if (!preloadPath) {
+      console.error('Не найден preload скрипт');
+      preloadPath = path.join(__dirname, 'preload.js'); // Fallback
+    }
+  }
+
+  mainWindow = new BrowserWindow({
+    width: 1400,
+    height: 900,
+    minWidth: 1000,
+    minHeight: 700,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: preloadPath,
+      webSecurity: false, // Отключаем для упрощения разработки
+      enableRemoteModule: false,
+      devTools: true // Всегда включаем DevTools
+    },
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    show: false // Не показываем окно до полной загрузки
+  });
+
+  // Определяем URL для загрузки
+  let startUrl;
+  if (isDev) {
+    startUrl = process.env.ELECTRON_START_URL || 'http://localhost:3000';
+  } else {
+    // В продакшене ищем index.html в разных местах
+    const possibleIndexPaths = [
+      path.join(__dirname, '../build/index.html'),
+      path.join(app.getAppPath(), 'build', 'index.html'),
+      path.join(__dirname, 'build', 'index.html')
+    ];
+    
+    let indexPath;
+    for (const testPath of possibleIndexPaths) {
+      console.log('Проверяем index.html:', testPath);
+      if (fs.existsSync(testPath)) {
+        indexPath = testPath;
+        console.log('Найден index.html:', indexPath);
+        break;
+      }
+    }
+    
+    if (indexPath) {
+      startUrl = url.format({
+        pathname: indexPath,
+        protocol: 'file:',
+        slashes: true
+      });
+    } else {
+      console.error('Не найден index.html');
+      startUrl = 'data:text/html,<h1>Ошибка: index.html не найден</h1>';
+    }
+  }
+
+  console.log(`Загружаем приложение с: ${startUrl}`);
+  
+  // Загружаем URL
+  mainWindow.loadURL(startUrl).catch(error => {
+    console.error('Ошибка загрузки URL:', error);
+  });
+
+  // Показываем окно после загрузки
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    
+    // ВСЕГДА открываем DevTools для отладки
+    mainWindow.webContents.openDevTools();
+  });
+
+  // Обработка закрытия окна
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+
+  // Обработка ошибок загрузки
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    console.error('Ошибка загрузки приложения:', errorCode, errorDescription, validatedURL);
+  });
+
+  // Горячие клавиши для DevTools
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.control && input.shift && input.key.toLowerCase() === 'i') {
+      mainWindow.webContents.toggleDevTools();
+    }
+  });
+}
+
+// Инициализация приложения
+app.whenReady().then(() => {
+  createWindow();
+
+  // Загружаем и регистрируем IPC обработчики
+  const { apiHandlers, fileHandlers, storageHandlers } = loadIPCHandlers();
+  
+  try {
+    apiHandlers.register(ipcMain, store, crypto, ENCRYPTION_KEY, IV_LENGTH);
+    fileHandlers.register(ipcMain, app, dialog, fs);
+    storageHandlers.register(ipcMain, app, fs, path);
+    console.log('IPC обработчики зарегистрированы успешно');
+  } catch (error) {
+    console.error('Ошибка регистрации IPC обработчиков:', error);
+  }
+
+  // Открытие окна при активации приложения (macOS)
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
+});
+
+// Закрытие приложения (Windows и Linux)
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
+
+// Обработчик открытия внешних ссылок
+ipcMain.handle('open-external-link', async (event, url) => {
+  try {
+    if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
+      await shell.openExternal(url);
+      return { success: true };
+    }
+    return { error: 'Недопустимая ссылка' };
+  } catch (error) {
+    console.error('Ошибка открытия внешней ссылки:', error);
+    return { error: error.message };
+  }
+});
+
+// Обработчик перезапуска приложения
+ipcMain.handle('restart-app', () => {
+  app.relaunch();
+  app.exit();
+});
+
+// Базовые обработчики для информации о приложении
+ipcMain.handle('get-app-version', () => {
+  return app.getVersion();
+});
+
+ipcMain.handle('get-platform', () => {
+  return process.platform;
+});
+
+// Обработка неперехваченных ошибок
+process.on('uncaughtException', (error) => {
+  console.error('Неперехваченная ошибка:', error);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Необработанное отклонение промиса:', reason);
+});
+
+// Graceful shutdown
+const gracefulShutdown = () => {
+  console.log('Завершение работы приложения...');
+  if (mainWindow) {
+    mainWindow.close();
+  }
+  app.quit();
+};
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);

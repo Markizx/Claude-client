@@ -1,0 +1,10 @@
+[data-theme="dark"] {
+  --background-primary: #121212;
+  --background-secondary: #1e1e1e;
+  --background-tertiary: #2d2d2d;
+  --text-primary: #ffffff;
+  --text-secondary: #b3b3b3;
+  --text-disabled: #666666;
+  --border-color: #3d3d3d;
+  --shadow: rgba(0, 0, 0, 0.5);
+}

@@ -1,0 +1,48 @@
+{
+  "appId": "com.yourname.claude-desktop",
+  "productName": "Claude Desktop",
+  "directories": {
+    "output": "dist"
+  },
+  "files": [
+    "build/**/*",
+    "node_modules/**/*",
+    "node_modules/**/{README.md,README,readme.md,readme}",
+    "node_modules/**/{test,__tests__,tests,powered-test,example,examples}",
+    "node_modules/**/*.d.ts",
+    "node_modules/.bin"
+  ],
+  "extraResources": [
+    {
+      "from": "db",
+      "to": "db"
+    }
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      },
+      {
+        "target": "portable", 
+        "arch": ["x64"]
+      }
+    ],
+    "sign": false,
+    "verifyUpdateCodeSignature": false,
+    "signAndEditExecutable": false,
+    "signDlls": false,
+    "requestedExecutionLevel": "asInvoker"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true
+  },
+  "asar": true,
+  "asarUnpack": [
+    "**/node_modules/better-sqlite3/**/*"
+  ]
+}

@@ -1,0 +1,64 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# testing
+/coverage
+
+# production
+/build
+/dist
+
+# misc
+.DS_Store
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# electron
+/storage/*/
+!/storage/*/README.md
+/db/*.db
+/db/*.db-journal
+/db/*.db-wal
+/db/*.db-shm
+
+# API keys
+api_key.txt
+.api_key
+
+# editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS generated files
+Thumbs.db
+Desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+
+# Build artifacts
+/dist_electron/
+/out/
+
+# Created icons
+/assets/icon.ico
+/assets/icon.icns
+/assets/icon.png
+
+# Electron builder cache
+electron-builder-cache/
