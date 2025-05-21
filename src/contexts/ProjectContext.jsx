@@ -123,7 +123,9 @@ export const ProjectProvider = ({ children }) => {
         return;
       }
       
+      console.log('Загрузка списка проектов...');
       const projects = await window.electronAPI.getProjects();
+      console.log(`Загружено ${projects?.length || 0} проектов`);
       dispatch({ type: ActionTypes.SET_PROJECTS, payload: projects || [] });
     } catch (error) {
       console.error('Error loading projects:', error);
@@ -147,11 +149,22 @@ export const ProjectProvider = ({ children }) => {
         return;
       }
       
+      console.log(`Загрузка файлов для проекта: ${projectId}`);
       const files = await window.electronAPI.getProjectFiles(projectId);
-      dispatch({ type: ActionTypes.SET_FILES, payload: files || [] });
+      
+      if (Array.isArray(files)) {
+        console.log(`Загружено ${files.length} файлов проекта`);
+        dispatch({ type: ActionTypes.SET_FILES, payload: files || [] });
+      } else {
+        console.error('Неверный формат ответа при загрузке файлов проекта');
+        dispatch({ type: ActionTypes.SET_FILES, payload: [] });
+      }
     } catch (error) {
-      console.error('Error loading files:', error);
+      console.error('Ошибка загрузки файлов проекта:', error);
       dispatch({ type: ActionTypes.SET_ERROR, payload: error.message });
+      dispatch({ type: ActionTypes.SET_FILES, payload: [] });
+    } finally {
+      dispatch({ type: ActionTypes.SET_LOADING, payload: false });
     }
   };
 
@@ -179,6 +192,7 @@ export const ProjectProvider = ({ children }) => {
         updatedAt: new Date().toISOString(),
       };
       
+      console.log(`Создание проекта: ${name}...`);
       const result = await window.electronAPI.createProject(newProject);
       
       if (!result || !result.success) {
@@ -186,6 +200,7 @@ export const ProjectProvider = ({ children }) => {
       }
       
       dispatch({ type: ActionTypes.CREATE_PROJECT, payload: newProject });
+      console.log(`Проект создан, ID: ${newProject.id}`);
       
       return newProject;
     } catch (error) {
@@ -222,6 +237,7 @@ export const ProjectProvider = ({ children }) => {
         updatedAt: new Date().toISOString(),
       };
       
+      console.log(`Обновление проекта: ${project.name || project.title}...`);
       const result = await window.electronAPI.updateProject(updatedProject);
       
       if (!result || !result.success) {
@@ -229,6 +245,7 @@ export const ProjectProvider = ({ children }) => {
       }
       
       dispatch({ type: ActionTypes.UPDATE_PROJECT, payload: updatedProject });
+      console.log(`Проект обновлён, ID: ${updatedProject.id}`);
       
       return updatedProject;
     } catch (error) {
@@ -240,6 +257,7 @@ export const ProjectProvider = ({ children }) => {
 
   // Set active project
   const setActiveProject = useCallback((project) => {
+    console.log(`Установка активного проекта: ${project?.name || project?.title || 'неизвестный'}`);
     dispatch({ type: ActionTypes.SET_ACTIVE_PROJECT, payload: project });
   }, []);
 
@@ -259,15 +277,18 @@ export const ProjectProvider = ({ children }) => {
         return false;
       }
       
-      const result = await window.electronAPI.deleteProject(projectId);
+      console.log(`Удаление проекта: ${projectId}...`);
       
-      // Удаляем проект из состояния даже если API вернул ошибку
+      // Удаляем проект из состояния ПЕРЕД вызовом API
       dispatch({ type: ActionTypes.DELETE_PROJECT, payload: projectId });
+      
+      const result = await window.electronAPI.deleteProject(projectId);
       
       if (!result || !result.success) {
         console.error('API error deleting project:', result?.error);
       }
       
+      console.log(`Проект удалён, ID: ${projectId}`);
       return true;
     } catch (error) {
       console.error('Error deleting project:', error);
@@ -301,12 +322,16 @@ export const ProjectProvider = ({ children }) => {
         return null;
       }
       
+      console.log(`Загрузка файла ${file.name} для проекта ${state.activeProject.id}...`);
+      
       // Upload the file
       const uploadedFile = await window.electronAPI.uploadFile(file);
       
       if (!uploadedFile || !uploadedFile.success) {
         throw new Error(uploadedFile?.error || 'Error uploading file');
       }
+      
+      console.log(`Файл загружен: ${uploadedFile.path}`);
       
       // Create file metadata
       const newFile = {
@@ -315,13 +340,14 @@ export const ProjectProvider = ({ children }) => {
         name: file.name,
         description,
         path: uploadedFile.path,
-        type: file.type,
-        size: file.size,
+        type: file.type || uploadedFile.type || 'application/octet-stream',
+        size: file.size || uploadedFile.size || 0,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
       
       // Save file metadata to database
+      console.log(`Сохранение метаданных файла в БД...`);
       const result = await window.electronAPI.createProjectFile(newFile);
       
       if (!result || !result.success) {
@@ -336,6 +362,7 @@ export const ProjectProvider = ({ children }) => {
         updatedAt: new Date().toISOString(),
       };
       
+      console.log(`Обновление времени изменения проекта...`);
       const updateResult = await window.electronAPI.updateProject(updatedProject);
       
       if (!updateResult || !updateResult.success) {
@@ -344,6 +371,7 @@ export const ProjectProvider = ({ children }) => {
       
       dispatch({ type: ActionTypes.UPDATE_PROJECT, payload: updatedProject });
       
+      console.log(`Файл успешно добавлен в проект, ID: ${newFile.id}`);
       return newFile;
     } catch (error) {
       console.error('Error adding file:', error);
@@ -381,6 +409,7 @@ export const ProjectProvider = ({ children }) => {
         updatedAt: new Date().toISOString(),
       };
       
+      console.log(`Обновление файла: ${file.name}...`);
       const result = await window.electronAPI.updateProjectFile(updatedFile);
       
       if (!result || !result.success) {
@@ -388,6 +417,7 @@ export const ProjectProvider = ({ children }) => {
       }
       
       dispatch({ type: ActionTypes.UPDATE_FILE, payload: updatedFile });
+      console.log(`Файл обновлён, ID: ${updatedFile.id}`);
       
       return updatedFile;
     } catch (error) {
@@ -420,14 +450,18 @@ export const ProjectProvider = ({ children }) => {
         throw new Error('File not found');
       }
       
+      console.log(`Удаление файла: ${file.name}...`);
+      
       // Delete file from storage
       if (file.path) {
+        console.log(`Удаление физического файла: ${file.path}...`);
         await window.electronAPI.deleteFile(file.path).catch(err => {
           console.error(`Error deleting file from storage: ${err.message}`);
         });
       }
       
       // Delete file metadata from database
+      console.log(`Удаление метаданных файла из БД...`);
       const result = await window.electronAPI.deleteProjectFile(fileId);
       
       // Удаляем файл из состояния
@@ -437,6 +471,7 @@ export const ProjectProvider = ({ children }) => {
         console.error('API error deleting project file:', result?.error);
       }
       
+      console.log(`Файл удалён, ID: ${fileId}`);
       return true;
     } catch (error) {
       console.error('Error deleting file:', error);

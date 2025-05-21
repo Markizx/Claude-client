@@ -105,11 +105,33 @@ const ProjectView = () => {
   };
 
   // Обработчик загрузки файла
-  const handleFileUpload = async (file) => {
-    if (!activeProject) return;
+const handleFileUpload = async (file) => {
+  if (!activeProject) return;
+  
+  try {
+    console.log(`Загрузка файла ${file.name} для проекта ${activeProject.id}`);
+    setError(null);
     
-    await addFile(file);
-  };
+    // Явно устанавливаем свойства файла, если их нет
+    const fileForUpload = {
+      ...file,
+      name: file.name || 'Файл без имени',
+      type: file.type || 'application/octet-stream',
+      size: file.size || 0
+    };
+    
+    const result = await addFile(fileForUpload);
+    
+    if (!result) {
+      console.error('Ошибка при добавлении файла в проект');
+    } else {
+      console.log(`Файл ${file.name} успешно добавлен в проект`);
+    }
+  } catch (error) {
+    console.error('Ошибка загрузки файла:', error);
+    setError('Ошибка загрузки файла: ' + (error.message || String(error)));
+  }
+};
 
   // Обработчик удаления файла
   const handleFileRemove = async (fileId) => {
