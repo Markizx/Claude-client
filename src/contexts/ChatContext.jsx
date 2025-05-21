@@ -306,45 +306,54 @@ export const ChatProvider = ({ children }) => {
       return false;
     }
     
-    console.log(`Удаление чата ID: ${chatId}`);
+    console.log(`Запрос на удаление чата ID: ${chatId}`);
     dispatch({ type: ActionTypes.SET_LOADING, payload: true });
     
-    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Сначала удаляем из UI состояния
-    dispatch({ type: ActionTypes.DELETE_CHAT, payload: chatId });
+    // Дождёмся готовности electronAPI
+    const waitForElectronAPI = async (maxAttempts = 50) => {
+      let attempts = 0;
+      while (!window.electronAPI && attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        attempts++;
+      }
+      return !!window.electronAPI;
+    };
     
-    // Проверяем доступность electronAPI
-    if (!window.electronAPI) {
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
+    const hasElectronAPI = await waitForElectronAPI();
     
-    if (!window.electronAPI) {
+    if (!hasElectronAPI) {
       console.error('electronAPI не доступен при удалении чата');
-      return true; // Возвращаем true, т.к. из UI уже удалили
+      dispatch({ type: ActionTypes.SET_ERROR, payload: 'API не доступен' });
+      return false;
     }
     
     try {
-      // Отправляем запрос на удаление чата из базы данных
+      // ИСПРАВЛЕНО: Сначала удаляем из базы данных, затем из UI
       console.log(`Отправка запроса на удаление чата ${chatId} в БД`);
       const result = await window.electronAPI.deleteChat(chatId);
       
       if (!result || !result.success) {
         console.error(`Ошибка при удалении чата ${chatId} из БД:`, result?.error);
-      } else {
-        console.log(`Чат ${chatId} успешно удален из БД`);
+        dispatch({ type: ActionTypes.SET_ERROR, payload: `Ошибка удаления: ${result?.error || 'Неизвестная ошибка'}` });
+        return false;
       }
+      
+      console.log(`Чат ${chatId} успешно удален из БД, обновляем UI`);
+      
+      // Только после успешного удаления из БД удаляем из UI
+      dispatch({ type: ActionTypes.DELETE_CHAT, payload: chatId });
+      
+      console.log(`Чат полностью удален из приложения`);
+      return true;
     } catch (apiError) {
       console.error(`Ошибка вызова API при удалении чата ${chatId}:`, apiError);
+      dispatch({ type: ActionTypes.SET_ERROR, payload: `Ошибка API: ${apiError.message || apiError}` });
+      return false;
     }
-    
-    return true; // Всегда возвращаем true, т.к. из UI чат уже удален
   } catch (error) {
     console.error(`Критическая ошибка при удалении чата ${chatId}:`, error);
-    
-    // Всё равно удаляем из состояния UI
-    dispatch({ type: ActionTypes.DELETE_CHAT, payload: chatId });
-    
     dispatch({ type: ActionTypes.SET_ERROR, payload: error.message });
-    return true; // Возвращаем true для UI
+    return false;
   } finally {
     dispatch({ type: ActionTypes.SET_LOADING, payload: false });
   }

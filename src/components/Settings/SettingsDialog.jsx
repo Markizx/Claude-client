@@ -138,32 +138,56 @@ const SettingsDialog = ({ open, onClose }) => {
   };
 
   const handleSave = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Гарантируем, что модель всегда claude-3-7-sonnet
-      const settingsToSave = {
-        ...localSettings,
-        model: 'claude-3-7-sonnet-20250219'
-      };
-      
-      console.log('Сохранение настроек с принудительной моделью Claude 3.7 Sonnet:', settingsToSave);
-      
-      const success = await updateSettings(settingsToSave);
-      
-      if (success) {
-        setSuccess(true);
-        setTimeout(() => setSuccess(false), 3000);
-      } else {
-        setError('Не удалось сохранить настройки');
+  try {
+    setLoading(true);
+    setError(null);
+    
+    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Гарантируем, что модель всегда claude-3-7-sonnet
+    const settingsToSave = {
+      ...localSettings,
+      model: 'claude-3-7-sonnet-20250219'
+    };
+    
+    console.log('Сохранение настроек с принудительной моделью Claude 3.7 Sonnet:', settingsToSave);
+    
+    // Добавляем повторные попытки
+    let success = false;
+    let attempts = 0;
+    const maxAttempts = 3;
+    
+    while (!success && attempts < maxAttempts) {
+      attempts++;
+      try {
+        success = await updateSettings(settingsToSave);
+        
+        if (success) {
+          // После успешного сохранения, обновляем тему в DOM
+          document.documentElement.setAttribute('data-theme', settingsToSave.theme || 'light');
+          setSuccess(true);
+          setTimeout(() => setSuccess(false), 3000);
+          break;
+        } else {
+          console.warn(`Попытка ${attempts}: Не удалось сохранить настройки`);
+          await new Promise(resolve => setTimeout(resolve, 300));
+        }
+      } catch (attemptError) {
+        console.error(`Попытка ${attempts} сохранения настроек завершилась ошибкой:`, attemptError);
+        if (attempts === maxAttempts) {
+          throw attemptError;
+        }
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
-    } catch (err) {
-      setError(`Ошибка сохранения настроек: ${err.message}`);
-    } finally {
-      setLoading(false);
     }
-  };
+    
+    if (!success) {
+      setError('Не удалось сохранить настройки после нескольких попыток');
+    }
+  } catch (err) {
+    setError(`Ошибка сохранения настроек: ${err.message}`);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleReset = () => {
     // Сбрасываем локальные настройки к значениям по умолчанию

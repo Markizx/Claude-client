@@ -18,7 +18,23 @@ class SettingsStore {
     try {
       if (fs.existsSync(this.settingsPath)) {
         const data = fs.readFileSync(this.settingsPath, 'utf8');
-        return JSON.parse(data);
+        try {
+          const settings = JSON.parse(data);
+          console.log("Настройки успешно загружены из файла");
+          
+          // Всегда фиксируем модель
+          settings.model = 'claude-3-7-sonnet-20250219';
+          
+          return settings;
+        } catch (parseError) {
+          console.error('Ошибка парсинга JSON настроек:', parseError);
+          // В случае ошибки парсинга сохраняем бэкап файла с ошибкой
+          const backupPath = `${this.settingsPath}.error-${Date.now()}`;
+          fs.copyFileSync(this.settingsPath, backupPath);
+          console.log(`Сохранен бэкап файла настроек: ${backupPath}`);
+        }
+      } else {
+        console.log("Файл настроек не найден, будут использованы значения по умолчанию");
       }
     } catch (error) {
       console.error('Ошибка загрузки настроек из файла:', error);
@@ -58,11 +74,25 @@ class SettingsStore {
   // Сохранение настроек в файл
   saveSettings(settings) {
     try {
+      // Создаем директорию, если она не существует
+      const dir = path.dirname(this.settingsPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      
       // Принудительно устанавливаем модель Claude 3.7 Sonnet
       settings.model = 'claude-3-7-sonnet-20250219';
       
       this.settings = settings;
-      fs.writeFileSync(this.settingsPath, JSON.stringify(settings, null, 2), 'utf8');
+      
+      // Сначала сохраняем во временный файл
+      const tempPath = `${this.settingsPath}.temp`;
+      fs.writeFileSync(tempPath, JSON.stringify(settings, null, 2), 'utf8');
+      
+      // Затем переименовываем для атомарной операции
+      fs.renameSync(tempPath, this.settingsPath);
+      
+      console.log("Настройки успешно сохранены в файл");
       return true;
     } catch (error) {
       console.error('Ошибка сохранения настроек в файл:', error);
@@ -72,6 +102,8 @@ class SettingsStore {
 
   // Получение всех настроек
   getSettings() {
+    // Всегда гарантируем правильную модель
+    this.settings.model = 'claude-3-7-sonnet-20250219';
     return this.settings;
   }
 
@@ -127,21 +159,104 @@ class StorageManager {
         fs.mkdirSync(dbDir, { recursive: true });
       }
       
-      // Create database connection
-      this.db = new Database(this.dbPath, { 
-        verbose: process.env.NODE_ENV === 'development' ? console.log : null 
-      });
+      // Сначала создаем бэкап, если БД уже существует
+      if (fs.existsSync(this.dbPath)) {
+        try {
+          const backupPath = `${this.dbPath}.backup-${Date.now()}`;
+          fs.copyFileSync(this.dbPath, backupPath);
+          console.log(`Создан бэкап БД: ${backupPath}`);
+        } catch (backupError) {
+          console.warn('Не удалось создать бэкап БД:', backupError);
+        }
+      }
       
-      // Enable WAL mode for better performance
-      this.db.pragma('journal_mode = WAL');
-      this.db.pragma('foreign_keys = ON');
-      
-      // Create tables if they don't exist
-      this.createTables();
-      
-      console.log('Database initialized successfully');
+      // Create database connection with robust error handling
+      try {
+        this.db = new Database(this.dbPath, { 
+          verbose: process.env.NODE_ENV === 'development' ? console.log : null,
+          fileMustExist: false
+        });
+        
+        // Проверяем целостность БД
+        const integrityCheck = this.db.pragma('integrity_check');
+        if (integrityCheck !== 'ok' && Array.isArray(integrityCheck) && integrityCheck[0] !== 'ok') {
+          console.error('База данных повреждена:', integrityCheck);
+          throw new Error('Обнаружено повреждение базы данных');
+        }
+        
+        // Enable WAL mode for better performance and crash resistance
+        this.db.pragma('journal_mode = WAL');
+        this.db.pragma('foreign_keys = ON');
+        this.db.pragma('synchronous = NORMAL'); // Более быстрый режим с достаточной надежностью
+        this.db.pragma('temp_store = MEMORY'); // Для оптимизации
+        
+        // Create tables if they don't exist
+        this.createTables();
+        
+        console.log('Database initialized successfully');
+      } catch (dbError) {
+        console.error('Error opening database:', dbError);
+        
+        // Пытаемся восстановить из бэкапа если он существует
+        const backups = fs.readdirSync(dbDir)
+          .filter(file => file.startsWith(path.basename(this.dbPath) + '.backup-'))
+          .sort()
+          .reverse();
+        
+        if (backups.length > 0) {
+          const latestBackup = path.join(dbDir, backups[0]);
+          console.log(`Attempting to recover from backup: ${latestBackup}`);
+          
+          try {
+            // Переименовываем поврежденную БД
+            const corruptedPath = `${this.dbPath}.corrupted-${Date.now()}`;
+            if (fs.existsSync(this.dbPath)) {
+              fs.renameSync(this.dbPath, corruptedPath);
+            }
+            
+            // Восстанавливаем из бэкапа
+            fs.copyFileSync(latestBackup, this.dbPath);
+            
+            // Пытаемся снова открыть БД
+            this.db = new Database(this.dbPath, { 
+              verbose: process.env.NODE_ENV === 'development' ? console.log : null 
+            });
+            
+            // Включаем нужные режимы
+            this.db.pragma('journal_mode = WAL');
+            this.db.pragma('foreign_keys = ON');
+            
+            console.log('База данных успешно восстановлена из бэкапа');
+            this.createTables();
+          } catch (recoveryError) {
+            console.error('Ошибка восстановления из бэкапа:', recoveryError);
+            throw new Error('Не удалось восстановить базу данных из бэкапа');
+          }
+        } else {
+          // Нет бэкапов, создаем новую БД
+          console.log('Бэкапы не найдены, создаем новую БД');
+          try {
+            // Переименовываем поврежденную БД если она существует
+            if (fs.existsSync(this.dbPath)) {
+              const corruptedPath = `${this.dbPath}.corrupted-${Date.now()}`;
+              fs.renameSync(this.dbPath, corruptedPath);
+            }
+            
+            // Создаем новую БД
+            this.db = new Database(this.dbPath);
+            this.db.pragma('journal_mode = WAL');
+            this.db.pragma('foreign_keys = ON');
+            
+            this.createTables();
+            console.log('Создана новая пустая база данных');
+          } catch (newDbError) {
+            console.error('Не удалось создать новую БД:', newDbError);
+            throw new Error('Критическая ошибка инициализации базы данных');
+          }
+        }
+      }
     } catch (error) {
-      console.error('Database initialization error:', error);
+      console.error('Критическая ошибка инициализации базы данных:', error);
       throw error;
     }
   }
@@ -380,18 +495,17 @@ class StorageManager {
   }
 
   deleteChat(chatId) {
-  try {
-    if (!chatId) {
-      return { success: false, error: 'Chat ID is required' };
-    }
-    
-    console.log(`Удаление чата из БД (ID: ${chatId})`);
-    
-    // Start a transaction
-    const transaction = this.db.transaction(() => {
-      // Find files to delete
+    try {
+      if (!chatId) {
+        console.error('Не указан ID чата для удаления');
+        return { success: false, error: 'Chat ID is required' };
+      }
+      
+      console.log(`Удаление чата из БД (ID: ${chatId})`);
+      
+      // Находим все файлы, связанные с чатом, для последующего удаления
       const attachments = this.db.prepare(`
-        SELECT ma.path 
+        SELECT ma.path, ma.id 
         FROM message_attachments ma
         JOIN messages m ON ma.message_id = m.id
         WHERE m.chat_id = ?
@@ -399,56 +513,74 @@ class StorageManager {
       
       console.log(`Найдено ${attachments.length} вложений для удаления`);
       
-      // Delete message attachments
-      const attachmentResult = this.db.prepare(`
-        DELETE FROM message_attachments
-        WHERE message_id IN (SELECT id FROM messages WHERE chat_id = ?)
-      `).run(chatId);
+      // Начинаем транзакцию
+      this.db.prepare('BEGIN TRANSACTION').run();
       
-      console.log(`Удалено записей из message_attachments: ${attachmentResult.changes}`);
-      
-      // Delete artifacts
-      const artifactResult = this.db.prepare(`
-        DELETE FROM artifacts
-        WHERE message_id IN (SELECT id FROM messages WHERE chat_id = ?)
-      `).run(chatId);
-      
-      console.log(`Удалено записей из artifacts: ${artifactResult.changes}`);
-      
-      // Delete messages
-      const messageResult = this.db.prepare('DELETE FROM messages WHERE chat_id = ?').run(chatId);
-      console.log(`Удалено записей из messages: ${messageResult.changes}`);
-      
-      // Delete chat
-      const chatResult = this.db.prepare('DELETE FROM chats WHERE id = ?').run(chatId);
-      console.log(`Удалено записей из chats: ${chatResult.changes}`);
-      
-      // Return files to delete
-      return attachments;
-    });
-    
-    const filesToDelete = transaction();
-    
-    // Delete files asynchronously
-    setTimeout(() => {
-      for (const file of filesToDelete) {
-        try {
-          if (file && file.path && fs.existsSync(file.path)) {
-            fs.unlinkSync(file.path);
-            console.log(`Удален файл: ${file.path}`);
-          }
-        } catch (err) {
-          console.error(`Ошибка удаления файла ${file.path}:`, err);
+      try {
+        // Удаляем артефакты сообщений
+        const artifactResult = this.db.prepare(`
+          DELETE FROM artifacts
+          WHERE message_id IN (SELECT id FROM messages WHERE chat_id = ?)
+        `).run(chatId);
+        
+        console.log(`Удалено артефактов: ${artifactResult.changes}`);
+        
+        // Удаляем вложения сообщений
+        const attachmentResult = this.db.prepare(`
+          DELETE FROM message_attachments
+          WHERE message_id IN (SELECT id FROM messages WHERE chat_id = ?)
+        `).run(chatId);
+        
+        console.log(`Удалено вложений: ${attachmentResult.changes}`);
+        
+        // Удаляем сообщения
+        const messageResult = this.db.prepare(
+          'DELETE FROM messages WHERE chat_id = ?'
+        ).run(chatId);
+        
+        console.log(`Удалено сообщений: ${messageResult.changes}`);
+        
+        // Удаляем сам чат
+        const chatResult = this.db.prepare(
+          'DELETE FROM chats WHERE id = ?'
+        ).run(chatId);
+        
+        console.log(`Удален чат: ${chatResult.changes > 0 ? 'Да' : 'Нет'}`);
+        
+        // Если удаление чата не удалось, значит чата с таким ID нет
+        if (chatResult.changes === 0) {
+          this.db.prepare('ROLLBACK').run();
+          return { success: false, error: 'Chat not found' };
         }
+        
+        // Фиксируем транзакцию
+        this.db.prepare('COMMIT').run();
+        
+        // Теперь удаляем файлы с диска синхронно
+        for (const attachment of attachments) {
+          try {
+            if (attachment && attachment.path && fs.existsSync(attachment.path)) {
+              fs.unlinkSync(attachment.path);
+              console.log(`Удален файл: ${attachment.path}`);
+            }
+          } catch (fileError) {
+            console.error(`Ошибка удаления файла ${attachment.path}:`, fileError);
+            // Продолжаем удаление других файлов
+          }
+        }
+        
+        return { success: true };
+      } catch (transactionError) {
+        // В случае ошибки откатываем транзакцию
+        console.error('Ошибка при выполнении транзакции:', transactionError);
+        this.db.prepare('ROLLBACK').run();
+        throw transactionError;
       }
-    }, 100);
-    
-    return { success: true };
-  } catch (error) {
-    console.error('Ошибка удаления чата:', error);
-    return { success: false, error: error.message };
+    } catch (error) {
+      console.error('Ошибка удаления чата:', error);
+      return { success: false, error: error.message };
+    }
   }
-}
 
   // Message methods
   getMessagesByChatId(chatId) {
@@ -640,18 +772,16 @@ class StorageManager {
       
       const attachments = transaction();
       
-      // Delete files asynchronously
-      setTimeout(() => {
-        for (const attachment of attachments) {
-          try {
-            if (fs.existsSync(attachment.path)) {
-              fs.unlinkSync(attachment.path);
-            }
-          } catch (err) {
-            console.error(`Error deleting file ${attachment.path}:`, err);
+      // Delete files synchronously
+      for (const attachment of attachments) {
+        try {
+          if (fs.existsSync(attachment.path)) {
+            fs.unlinkSync(attachment.path);
           }
+        } catch (err) {
+          console.error(`Error deleting file ${attachment.path}:`, err);
         }
-      }, 100);
+      }
       
       return { success: true };
     } catch (error) {
@@ -744,18 +874,16 @@ class StorageManager {
       
       const filesToDelete = transaction();
       
-      // Delete files asynchronously
-      setTimeout(() => {
-        for (const file of filesToDelete) {
-          try {
-            if (fs.existsSync(file.path)) {
-              fs.unlinkSync(file.path);
-            }
-          } catch (err) {
-            console.error(`Error deleting file ${file.path}:`, err);
+      // Delete files synchronously
+      for (const file of filesToDelete) {
+        try {
+          if (fs.existsSync(file.path)) {
+            fs.unlinkSync(file.path);
           }
+        } catch (err) {
+          console.error(`Error deleting file ${file.path}:`, err);
         }
-      }, 100);
+      }
       
       return { success: true };
     } catch (error) {
@@ -887,15 +1015,13 @@ class StorageManager {
       
       // Delete file from disk if it exists
       if (fileData && fileData.path) {
-        setTimeout(() => {
-          try {
-            if (fs.existsSync(fileData.path)) {
-              fs.unlinkSync(fileData.path);
-            }
-          } catch (err) {
-            console.error(`Error deleting file ${fileData.path}:`, err);
+        try {
+          if (fs.existsSync(fileData.path)) {
+            fs.unlinkSync(fileData.path);
           }
-        }, 100);
+        } catch (err) {
+          console.error(`Error deleting file ${fileData.path}:`, err);
+        }
       }
       
       return { success: true };
@@ -1063,9 +1189,45 @@ app.on('quit', () => {
 // Функция для регистрации обработчиков IPC
 function register(ipcMainInstance) {
   // Settings handlers
-  ipcMainInstance.handle('settings:getAll', async () => storageManager.getAllSettings());
-  ipcMainInstance.handle('settings:update', async (event, settings) => storageManager.updateSettings(settings));
-  ipcMainInstance.handle('settings:updateSingle', async (event, { key, value }) => storageManager.updateSetting(key, value));
+  ipcMainInstance.handle('settings:getAll', async () => {
+    try {
+      const allSettings = storageManager.getAllSettings();
+      return allSettings;
+    } catch (error) {
+      console.error("Ошибка при получении настроек:", error);
+      return { error: error.message };
+    }
+  });
+  
+  ipcMainInstance.handle('settings:update', async (event, settings) => {
+    try {
+      // Принудительно устанавливаем модель Claude 3.7 Sonnet
+      if (settings) {
+        settings.model = 'claude-3-7-sonnet-20250219';
+      }
+      
+      const success = storageManager.updateSettings(settings);
+      return { success };
+    } catch (error) {
+      console.error("Ошибка при обновлении настроек:", error);
+      return { success: false, error: error.message };
+    }
+  });
+  
+  ipcMainInstance.handle('settings:updateSingle', async (event, { key, value }) => {
+    try {
+      // Если обновляется модель, всегда устанавливаем правильное значение
+      if (key === 'model') {
+        value = 'claude-3-7-sonnet-20250219';
+      }
+      
+      const success = storageManager.updateSetting(key, value);
+      return { success };
+    } catch (error) {
+      console.error(`Ошибка при обновлении настройки ${key}:`, error);
+      return { success: false, error: error.message };
+    }
+  });
 
   // Chat handlers
   ipcMainInstance.handle('chats:getAll', async () => storageManager.getAllChats());
