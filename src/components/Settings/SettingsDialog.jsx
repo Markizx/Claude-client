@@ -83,7 +83,7 @@ const SettingsDialog = ({ open, onClose }) => {
 
   // Загрузка настроек при открытии диалога
   useEffect(() => {
-    if (open) {
+    if (open && settings) {
       setLocalSettings({ ...localSettings, ...settings });
     }
   }, [open, settings]);
@@ -157,6 +157,11 @@ const SettingsDialog = ({ open, onClose }) => {
   const handleBackup = async () => {
     try {
       setLoading(true);
+      if (!window.electronAPI) {
+        setError('Функция создания резервной копии недоступна');
+        return;
+      }
+      
       const backupPath = await window.electronAPI.saveFileDialog(
         `claude-backup-${new Date().toISOString().split('T')[0]}.db`,
         [{ name: 'Database files', extensions: ['db'] }]
@@ -180,12 +185,18 @@ const SettingsDialog = ({ open, onClose }) => {
 
   const handleRestore = async () => {
     try {
+      if (!window.electronAPI) {
+        setError('Функция восстановления из резервной копии недоступна');
+        return;
+      }
+      
       const result = await window.electronAPI.openFileDialog({
         properties: ['openFile'],
         filters: [{ name: 'Database files', extensions: ['db'] }]
       });
       
       if (result && result.success && result.files && result.files.length > 0) {
+        // Запрашиваем подтверждение восстановления
         const confirmed = window.confirm(
           'Восстановление базы данных перезапишет все текущие данные. Продолжить?'
         );
@@ -270,8 +281,9 @@ const SettingsDialog = ({ open, onClose }) => {
         <TabPanel value={activeTab} index={0}>
           <Box sx={{ space: 3 }}>
             <FormControl fullWidth sx={{ mb: 3 }}>
-              <InputLabel>Язык интерфейса</InputLabel>
+              <InputLabel id="language-label">Язык интерфейса</InputLabel>
               <Select
+                labelId="language-label"
                 value={localSettings.language}
                 label="Язык интерфейса"
                 onChange={handleSelectChange('language')}
@@ -282,8 +294,9 @@ const SettingsDialog = ({ open, onClose }) => {
             </FormControl>
 
             <FormControl fullWidth sx={{ mb: 3 }}>
-              <InputLabel>Тема</InputLabel>
+              <InputLabel id="theme-label">Тема</InputLabel>
               <Select
+                labelId="theme-label"
                 value={localSettings.theme}
                 label="Тема"
                 onChange={handleSelectChange('theme')}
@@ -320,8 +333,9 @@ const SettingsDialog = ({ open, onClose }) => {
         <TabPanel value={activeTab} index={1}>
           <Box sx={{ space: 3 }}>
             <FormControl fullWidth sx={{ mb: 3 }}>
-              <InputLabel>Модель</InputLabel>
+              <InputLabel id="model-label">Модель</InputLabel>
               <Select
+                labelId="model-label"
                 value={localSettings.model}
                 label="Модель"
                 onChange={handleSelectChange('model')}

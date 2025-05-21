@@ -34,7 +34,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteProjectFile: (fileId) => ipcRenderer.invoke('projectFiles:delete', fileId),
   
   // File operations
-  uploadFile: (file) => {
+  uploadFile: async (file) => {
     // Для объекта File из браузера
     if (file instanceof Blob) {
       // Создаем Promise для обработки файла
@@ -121,49 +121,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openExternalLink: (url) => ipcRenderer.invoke('app:openExternal', url),
   showNotification: (title, body) => ipcRenderer.invoke('app:showNotification', { title, body }),
   restartApp: () => ipcRenderer.invoke('app:restart'),
-  
-  // Event listeners
-  onChatUpdated: (callback) => {
-    const subscription = (_event, chat) => callback(chat);
-    ipcRenderer.on('chat:updated', subscription);
-    return () => ipcRenderer.removeListener('chat:updated', subscription);
-  },
-  
-  onChatDeleted: (callback) => {
-    const subscription = (_event, chatId) => callback(chatId);
-    ipcRenderer.on('chat:deleted', subscription);
-    return () => ipcRenderer.removeListener('chat:deleted', subscription);
-  },
-  
-  onMessageCreated: (callback) => {
-    const subscription = (_event, message) => callback(message);
-    ipcRenderer.on('message:created', subscription);
-    return () => ipcRenderer.removeListener('message:created', subscription);
-  },
-  
-  onMessageUpdated: (callback) => {
-    const subscription = (_event, message) => callback(message);
-    ipcRenderer.on('message:updated', subscription);
-    return () => ipcRenderer.removeListener('message:updated', subscription);
-  },
-  
-  onMessageDeleted: (callback) => {
-    const subscription = (_event, messageId) => callback(messageId);
-    ipcRenderer.on('message:deleted', subscription);
-    return () => ipcRenderer.removeListener('message:deleted', subscription);
-  },
-  
-  onFileUploaded: (callback) => {
-    const subscription = (_event, file) => callback(file);
-    ipcRenderer.on('file:uploaded', subscription);
-    return () => ipcRenderer.removeListener('file:uploaded', subscription);
-  },
-  
-  onFileUploadProgress: (callback) => {
-    const subscription = (_event, progress) => callback(progress);
-    ipcRenderer.on('file:uploadProgress', subscription);
-    return () => ipcRenderer.removeListener('file:uploadProgress', subscription);
-  }
 });
 
 // Предоставление базовой информации об ОС

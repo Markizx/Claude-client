@@ -234,7 +234,10 @@ const ProjectView = () => {
       )}
 
       {/* Диалог редактирования проекта */}
-      <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)}>
+      <Dialog 
+        open={editDialogOpen} 
+        onClose={() => setEditDialogOpen(false)}
+      >
         <DialogTitle>Редактировать проект</DialogTitle>
         <DialogContent>
           <TextField
@@ -262,12 +265,20 @@ const ProjectView = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setEditDialogOpen(false)}>Отмена</Button>
-          <Button onClick={handleUpdateProject} variant="contained">Сохранить</Button>
+          <Button 
+            onClick={handleUpdateProject} 
+            variant="contained"
+          >
+            Сохранить
+          </Button>
         </DialogActions>
       </Dialog>
 
       {/* Диалог подтверждения удаления */}
-      <Dialog open={deleteConfirmOpen} onClose={() => setDeleteConfirmOpen(false)}>
+      <Dialog 
+        open={deleteConfirmOpen} 
+        onClose={() => setDeleteConfirmOpen(false)}
+      >
         <DialogTitle>Удалить проект?</DialogTitle>
         <DialogContent>
           <Typography>
@@ -276,7 +287,13 @@ const ProjectView = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDeleteConfirmOpen(false)}>Отмена</Button>
-          <Button onClick={handleDeleteProject} variant="contained" color="error">Удалить</Button>
+          <Button 
+            onClick={handleDeleteProject} 
+            variant="contained" 
+            color="error"
+          >
+            Удалить
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

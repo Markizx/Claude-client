@@ -82,7 +82,7 @@ const InputArea = ({
   });
 
   // Обработка отправки формы
-  const handleSubmit = async (event) => {
+  const handleSubmit = (event) => {
     // Проверяем, является ли event объектом события и имеет ли он метод preventDefault
     if (event && typeof event.preventDefault === 'function') {
       event.preventDefault();
@@ -94,7 +94,7 @@ const InputArea = ({
 
     try {
       // Подготавливаем файлы для отправки
-      const filesToSend = await Promise.all(
+      Promise.all(
         files.map(async (fileData) => {
           try {
             // Если файл уже имеет путь, просто используем его
@@ -137,24 +137,27 @@ const InputArea = ({
             return null;
           }
         })
-      );
+      ).then(async (filesToSend) => {
+        // Фильтруем null значения (файлы с ошибками)
+        const validFiles = filesToSend.filter(file => file !== null);
 
-      // Фильтруем null значения (файлы с ошибками)
-      const validFiles = filesToSend.filter(file => file !== null);
-
-      // Отправляем сообщение с файлами
-      await onSendMessage(message, validFiles);
-      
-      // Очищаем форму после успешной отправки
-      setMessage('');
-      setFiles([]);
-      setError('');
-      
-      // Освобождаем URL превью
-      files.forEach(file => {
-        if (file.preview && file.preview.startsWith('blob:')) {
-          URL.revokeObjectURL(file.preview);
-        }
+        // Отправляем сообщение с файлами
+        await onSendMessage(message, validFiles);
+        
+        // Очищаем форму после успешной отправки
+        setMessage('');
+        setFiles([]);
+        setError('');
+        
+        // Освобождаем URL превью
+        files.forEach(file => {
+          if (file.preview && file.preview.startsWith('blob:')) {
+            URL.revokeObjectURL(file.preview);
+          }
+        });
+      }).catch(err => {
+        setError('Ошибка при отправке сообщения: ' + (err.message || err));
+        setTimeout(() => setError(''), 5000);
       });
     } catch (err) {
       setError('Ошибка при отправке сообщения: ' + (err.message || err));
@@ -230,7 +233,7 @@ const InputArea = ({
   };
 
   // Голосовой ввод
-  const handleVoiceInput = async (e) => {
+  const handleVoiceInput = (e) => {
     if (e && typeof e.stopPropagation === 'function') {
       e.stopPropagation();
     }
@@ -238,25 +241,31 @@ const InputArea = ({
     if (!isRecording) {
       // Начинаем запись
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const mediaRecorder = new MediaRecorder(stream);
-        mediaRecorderRef.current = mediaRecorder;
-        
-        const chunks = [];
-        mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
-        mediaRecorder.onstop = () => {
-          const blob = new Blob(chunks, { type: 'audio/wav' });
-          // Здесь можно добавить обработку аудио
-          console.log('Audio recorded:', blob);
-        };
-        
-        mediaRecorder.start();
-        setIsRecording(true);
-        setRecordingTime(0);
-        
-        recordingIntervalRef.current = setInterval(() => {
-          setRecordingTime(prev => prev + 1);
-        }, 1000);
+        navigator.mediaDevices.getUserMedia({ audio: true })
+          .then(stream => {
+            const mediaRecorder = new MediaRecorder(stream);
+            mediaRecorderRef.current = mediaRecorder;
+            
+            const chunks = [];
+            mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
+            mediaRecorder.onstop = () => {
+              const blob = new Blob(chunks, { type: 'audio/wav' });
+              // Здесь можно добавить обработку аудио
+              console.log('Audio recorded:', blob);
+            };
+            
+            mediaRecorder.start();
+            setIsRecording(true);
+            setRecordingTime(0);
+            
+            recordingIntervalRef.current = setInterval(() => {
+              setRecordingTime(prev => prev + 1);
+            }, 1000);
+          })
+          .catch(error => {
+            setError('Ошибка доступа к микрофону: ' + (error.message || error));
+            setTimeout(() => setError(''), 5000);
+          });
       } catch (error) {
         setError('Ошибка доступа к микрофону: ' + (error.message || error));
         setTimeout(() => setError(''), 5000);
@@ -491,7 +500,8 @@ const InputArea = ({
             variant="contained"
             color="primary"
             disabled={disabled || loading || (!message.trim() && files.length === 0)}
-            type="submit"
+            type="button"
+            onClick={handleSubmit}
             sx={{
               borderRadius: 3,
               minWidth: 'auto',

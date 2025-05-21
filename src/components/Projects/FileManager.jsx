@@ -61,7 +61,7 @@ const FileManager = ({ files, onUpload, onRemove, loading }) => {
   const [error, setError] = useState(null);
   const fileInputRef = useRef(null);
 
-  // Обработчик drag'n'drop
+  // Обработчик drag'n'drop с безопасной проверкой событий
   const onDrop = async (acceptedFiles) => {
     if (!acceptedFiles || acceptedFiles.length === 0) return;
     
@@ -79,10 +79,11 @@ const FileManager = ({ files, onUpload, onRemove, loading }) => {
     }
   };
 
+  // Используем безопасное определение обработчиков событий
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    noClick: false, // Разрешаем клик по области
-    noKeyboard: false // Разрешаем навигацию с клавиатуры
+    noClick: false,
+    noKeyboard: false
   });
 
   // Обработчик выбора файлов
@@ -140,11 +141,11 @@ const FileManager = ({ files, onUpload, onRemove, loading }) => {
           overflow: 'hidden',
           p: 2,
           mb: 2,
-          ...getRootProps(),
           border: isDragActive ? '2px dashed #6e56cf' : '1px solid rgba(0, 0, 0, 0.12)',
           backgroundColor: isDragActive ? 'rgba(110, 86, 207, 0.08)' : 'transparent',
           cursor: 'pointer'
         }}
+        {...getRootProps()}
       >
         <input {...getInputProps()} />
         

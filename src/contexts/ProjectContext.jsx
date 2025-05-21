@@ -261,8 +261,7 @@ export const ProjectProvider = ({ children }) => {
       
       const result = await window.electronAPI.deleteProject(projectId);
       
-      // Удаляем проект из состояния даже если API вернул ошибку,
-      // чтобы исправить проблему с неудаляющимися проектами
+      // Удаляем проект из состояния даже если API вернул ошибку
       dispatch({ type: ActionTypes.DELETE_PROJECT, payload: projectId });
       
       if (!result || !result.success) {
@@ -350,6 +349,8 @@ export const ProjectProvider = ({ children }) => {
       console.error('Error adding file:', error);
       dispatch({ type: ActionTypes.SET_ERROR, payload: error.message });
       return null;
+    } finally {
+      dispatch({ type: ActionTypes.SET_LOADING, payload: false });
     }
   }, [state.activeProject]);
 
@@ -393,6 +394,8 @@ export const ProjectProvider = ({ children }) => {
       console.error('Error updating file:', error);
       dispatch({ type: ActionTypes.SET_ERROR, payload: error.message });
       return null;
+    } finally {
+      dispatch({ type: ActionTypes.SET_LOADING, payload: false });
     }
   }, [state.files]);
 
@@ -427,12 +430,12 @@ export const ProjectProvider = ({ children }) => {
       // Delete file metadata from database
       const result = await window.electronAPI.deleteProjectFile(fileId);
       
+      // Удаляем файл из состояния
+      dispatch({ type: ActionTypes.DELETE_FILE, payload: fileId });
+      
       if (!result || !result.success) {
         console.error('API error deleting project file:', result?.error);
       }
-      
-      // Удаляем файл из состояния в любом случае
-      dispatch({ type: ActionTypes.DELETE_FILE, payload: fileId });
       
       return true;
     } catch (error) {
@@ -445,6 +448,8 @@ export const ProjectProvider = ({ children }) => {
       
       dispatch({ type: ActionTypes.SET_ERROR, payload: error.message });
       return true; // Возвращаем true, чтобы UI показал что файл удален
+    } finally {
+      dispatch({ type: ActionTypes.SET_LOADING, payload: false });
     }
   }, [state.files]);
 

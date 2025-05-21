@@ -310,8 +310,7 @@ export const ChatProvider = ({ children }) => {
       // Отправляем запрос на удаление чата из базы данных
       const result = await window.electronAPI.deleteChat(chatId);
       
-      // Удаляем чат из состояния даже если API вернул ошибку,
-      // чтобы исправить проблему с неудаляющимися чатами
+      // Удаляем чат из состояния
       dispatch({ type: ActionTypes.DELETE_CHAT, payload: chatId });
       
       if (!result || !result.success) {
