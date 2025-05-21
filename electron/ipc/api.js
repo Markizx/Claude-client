@@ -286,35 +286,19 @@ class ClaudeAPIHandler {
 
 Всегда отвечай на русском языке, если не попросят иначе.`;
     
-    // Получаем настройки модели - НО ИГНОРИРУЕМ ИХ!
-    const settingsStore = new Store({ name: 'claude-desktop-settings' });
-    let settings = settingsStore.get('settings') || {};
-    
-    // Важное исправление: получаем настройки напрямую, если они не вложены в объект 'settings'
-    if (!settings.model) {
-      try {
-        settings = settingsStore.get('') || {};
-      } catch (error) {
-        console.error('Error getting direct settings:', error);
-      }
-    }
-    
-    // Используем настройки или значения по умолчанию
-    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Принудительно используем правильную модель независимо от настроек
-    console.log('КРИТИЧЕСКОЕ: Модель Claude принудительно установлена на 3.7 Sonnet!');
-    
-    // Фиксируем модель жестко
-    const modelName = 'claude-3-7-sonnet-20250219'; 
-    const maxTokens = settings.maxTokens || 4096;
-    const temperature = settings.temperature || 0.7;
-    const topP = settings.topP || 1.0;
+    // САМОЕ ВАЖНОЕ ИСПРАВЛЕНИЕ: жестко фиксируем модель
+    // Принудительно устанавливаем только claude-3-7-sonnet-20250219
+    const modelName = 'claude-3-7-sonnet-20250219';
+    const maxTokens = 4096;
+    const temperature = 0.7;
+    const topP = 1.0;
     
     // Make API request to Claude
     try {
       console.log(`Отправка запроса Claude API с моделью: ${modelName}`);
       
       const requestData = {
-        model: modelName, // Здесь используется фиксированная модель
+        model: modelName, // Жестко фиксированная модель
         max_tokens: maxTokens,
         messages: messages,
         system: systemPrompt,
@@ -324,7 +308,7 @@ class ClaudeAPIHandler {
       
       console.log('Request data (without file content):', JSON.stringify({
         ...requestData,
-        model: modelName, // Еще раз явно выводим модель для проверки
+        model: modelName, // Явно логируем модель для проверки
         messages: requestData.messages.map(msg => ({
           role: msg.role,
           content: Array.isArray(msg.content) 
