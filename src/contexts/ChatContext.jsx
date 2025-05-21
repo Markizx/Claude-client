@@ -299,46 +299,56 @@ export const ChatProvider = ({ children }) => {
 
   // Delete a chat
   const deleteChat = useCallback(async (chatId) => {
+  try {
+    if (!chatId) {
+      console.error('Не указан ID чата для удаления');
+      dispatch({ type: ActionTypes.SET_ERROR, payload: 'ID чата не указан' });
+      return false;
+    }
+    
+    console.log(`Удаление чата ID: ${chatId}`);
+    dispatch({ type: ActionTypes.SET_LOADING, payload: true });
+    
+    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Сначала удаляем из UI состояния
+    dispatch({ type: ActionTypes.DELETE_CHAT, payload: chatId });
+    
+    // Проверяем доступность electronAPI
+    if (!window.electronAPI) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
+    if (!window.electronAPI) {
+      console.error('electronAPI не доступен при удалении чата');
+      return true; // Возвращаем true, т.к. из UI уже удалили
+    }
+    
     try {
-      dispatch({ type: ActionTypes.SET_LOADING, payload: true });
-      
-      // Проверяем доступность electronAPI
-      if (!window.electronAPI) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-      
-      if (!window.electronAPI) {
-        console.error('electronAPI не доступен при удалении чата');
-        dispatch({ type: ActionTypes.SET_ERROR, payload: 'API не доступен' });
-        return false;
-      }
-      
-      console.log('Удаление чата:', chatId);
-      
-      // ВАЖНО: Сначала удаляем из состояния UI, потом из базы
-      dispatch({ type: ActionTypes.DELETE_CHAT, payload: chatId });
-      
       // Отправляем запрос на удаление чата из базы данных
+      console.log(`Отправка запроса на удаление чата ${chatId} в БД`);
       const result = await window.electronAPI.deleteChat(chatId);
       
       if (!result || !result.success) {
-        console.error('API error deleting chat:', result?.error);
-        // Но не отменяем удаление из UI, так как чат уже удален из интерфейса
+        console.error(`Ошибка при удалении чата ${chatId} из БД:`, result?.error);
+      } else {
+        console.log(`Чат ${chatId} успешно удален из БД`);
       }
-      
-      return true;
-    } catch (error) {
-      console.error('Error deleting chat:', error);
-      
-      // Все равно удаляем из локального состояния, чтобы UI был согласован
-      dispatch({ type: ActionTypes.DELETE_CHAT, payload: chatId });
-      
-      dispatch({ type: ActionTypes.SET_ERROR, payload: error.message });
-      return true; // Возвращаем true, чтобы UI показал что чат удален
-    } finally {
-      dispatch({ type: ActionTypes.SET_LOADING, payload: false });
+    } catch (apiError) {
+      console.error(`Ошибка вызова API при удалении чата ${chatId}:`, apiError);
     }
-  }, []);
+    
+    return true; // Всегда возвращаем true, т.к. из UI чат уже удален
+  } catch (error) {
+    console.error(`Критическая ошибка при удалении чата ${chatId}:`, error);
+    
+    // Всё равно удаляем из состояния UI
+    dispatch({ type: ActionTypes.DELETE_CHAT, payload: chatId });
+    
+    dispatch({ type: ActionTypes.SET_ERROR, payload: error.message });
+    return true; // Возвращаем true для UI
+  } finally {
+    dispatch({ type: ActionTypes.SET_LOADING, payload: false });
+  }
+}, []);
 
   // Send message to Claude AI
   const sendMessage = useCallback(async (content, files = [], projectFiles = []) => {

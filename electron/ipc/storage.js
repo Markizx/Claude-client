@@ -380,77 +380,75 @@ class StorageManager {
   }
 
   deleteChat(chatId) {
-    try {
-      if (!chatId) {
-        return { success: false, error: 'Chat ID is required' };
-      }
-      
-      console.log(`Удаление чата из базы данных: ${chatId}`);
-      
-      // Start a transaction
-      const transaction = this.db.transaction(() => {
-        // Find files to delete
-        const attachments = this.db.prepare(`
-          SELECT ma.path 
-          FROM message_attachments ma
-          JOIN messages m ON ma.message_id = m.id
-          WHERE m.chat_id = ?
-        `).all(chatId);
-        
-        console.log(`Найдено вложений для удаления: ${attachments.length}`);
-        
-        // Delete message attachments
-        const attachmentResult = this.db.prepare(`
-          DELETE FROM message_attachments
-          WHERE message_id IN (SELECT id FROM messages WHERE chat_id = ?)
-        `).run(chatId);
-        
-        console.log(`Удалено вложений: ${attachmentResult.changes}`);
-        
-        // Delete artifacts
-        const artifactResult = this.db.prepare(`
-          DELETE FROM artifacts
-          WHERE message_id IN (SELECT id FROM messages WHERE chat_id = ?)
-        `).run(chatId);
-        
-        console.log(`Удалено артефактов: ${artifactResult.changes}`);
-        
-        // Delete messages
-        const messagesResult = this.db.prepare('DELETE FROM messages WHERE chat_id = ?').run(chatId);
-        console.log(`Удалено сообщений: ${messagesResult.changes}`);
-        
-        // Delete chat
-        const chatResult = this.db.prepare('DELETE FROM chats WHERE id = ?').run(chatId);
-        console.log(`Удален чат: ${chatResult.changes > 0 ? 'да' : 'нет'}`);
-        
-        // Return files to delete
-        return attachments;
-      });
-      
-      const filesToDelete = transaction();
-      
-      // Delete files asynchronously
-      if (filesToDelete && filesToDelete.length > 0) {
-        setTimeout(() => {
-          for (const file of filesToDelete) {
-            try {
-              if (file.path && fs.existsSync(file.path)) {
-                fs.unlinkSync(file.path);
-                console.log(`Удален файл: ${file.path}`);
-              }
-            } catch (err) {
-              console.error(`Ошибка удаления файла ${file.path}:`, err);
-            }
-          }
-        }, 100);
-      }
-      
-      return { success: true };
-    } catch (error) {
-      console.error('Ошибка удаления чата:', error);
-      return { success: false, error: error.message };
+  try {
+    if (!chatId) {
+      return { success: false, error: 'Chat ID is required' };
     }
+    
+    console.log(`Удаление чата из БД (ID: ${chatId})`);
+    
+    // Start a transaction
+    const transaction = this.db.transaction(() => {
+      // Find files to delete
+      const attachments = this.db.prepare(`
+        SELECT ma.path 
+        FROM message_attachments ma
+        JOIN messages m ON ma.message_id = m.id
+        WHERE m.chat_id = ?
+      `).all(chatId);
+      
+      console.log(`Найдено ${attachments.length} вложений для удаления`);
+      
+      // Delete message attachments
+      const attachmentResult = this.db.prepare(`
+        DELETE FROM message_attachments
+        WHERE message_id IN (SELECT id FROM messages WHERE chat_id = ?)
+      `).run(chatId);
+      
+      console.log(`Удалено записей из message_attachments: ${attachmentResult.changes}`);
+      
+      // Delete artifacts
+      const artifactResult = this.db.prepare(`
+        DELETE FROM artifacts
+        WHERE message_id IN (SELECT id FROM messages WHERE chat_id = ?)
+      `).run(chatId);
+      
+      console.log(`Удалено записей из artifacts: ${artifactResult.changes}`);
+      
+      // Delete messages
+      const messageResult = this.db.prepare('DELETE FROM messages WHERE chat_id = ?').run(chatId);
+      console.log(`Удалено записей из messages: ${messageResult.changes}`);
+      
+      // Delete chat
+      const chatResult = this.db.prepare('DELETE FROM chats WHERE id = ?').run(chatId);
+      console.log(`Удалено записей из chats: ${chatResult.changes}`);
+      
+      // Return files to delete
+      return attachments;
+    });
+    
+    const filesToDelete = transaction();
+    
+    // Delete files asynchronously
+    setTimeout(() => {
+      for (const file of filesToDelete) {
+        try {
+          if (file && file.path && fs.existsSync(file.path)) {
+            fs.unlinkSync(file.path);
+            console.log(`Удален файл: ${file.path}`);
+          }
+        } catch (err) {
+          console.error(`Ошибка удаления файла ${file.path}:`, err);
+        }
+      }
+    }, 100);
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Ошибка удаления чата:', error);
+    return { success: false, error: error.message };
   }
+}
 
   // Message methods
   getMessagesByChatId(chatId) {

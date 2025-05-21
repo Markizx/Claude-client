@@ -1,3 +1,4 @@
+// src/contexts/SettingsContext.jsx
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 
 const SettingsContext = createContext();
@@ -5,7 +6,7 @@ const SettingsContext = createContext();
 export const useSettings = () => {
   const context = useContext(SettingsContext);
   if (!context) {
-    throw new Error('useSettings must be used within a SettingsProvider');
+    throw new Error('useSettings должен использоваться внутри SettingsProvider');
   }
   return context;
 };
@@ -17,7 +18,7 @@ const defaultSettings = {
   autoSave: true,
   confirmDelete: true,
   
-  // Настройки AI
+  // Настройки AI - ИСПРАВЛЕНО!
   model: 'claude-3-7-sonnet-20250219',
   maxTokens: 4096,
   temperature: 0.7,
@@ -52,10 +53,10 @@ export const SettingsProvider = ({ children }) => {
       
       if (window.electronAPI && window.electronAPI.getSettings) {
         // Задержка для уверенности, что electronAPI загрузился
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 500));
         
         const savedSettings = await window.electronAPI.getSettings();
-        console.log('Загружены настройки:', savedSettings);
+        console.log('Загруженные настройки:', savedSettings);
         
         if (savedSettings && typeof savedSettings === 'object') {
           // Мерджим с дефолтными настройками
@@ -64,26 +65,22 @@ export const SettingsProvider = ({ children }) => {
             ...savedSettings
           };
           
-          // Принудительно устанавливаем модель по умолчанию
+          // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: всегда устанавливаем модель claude-3-7-sonnet
           mergedSettings.model = 'claude-3-7-sonnet-20250219';
           
           setSettings(mergedSettings);
+          console.log('Установлены настройки:', mergedSettings);
           
           // Применяем тему
           applyTheme(mergedSettings.theme || defaultSettings.theme);
           
-          // Если savedSettings пустой или не содержит модель, сохраняем дефолтные настройки
-          if (Object.keys(savedSettings).length === 0 || !savedSettings.model) {
-            await updateSettings(mergedSettings);
-          }
+          // Сохраняем изменённые настройки (с принудительной моделью)
+          await updateSettings(mergedSettings);
         } else {
           // Если сохраненные настройки не найдены, сохраняем дефолтные
-          console.log('Сохраненные настройки не найдены, применяем дефолтные');
+          console.log('Настройки не найдены, устанавливаем дефолтные');
           setSettings(defaultSettings);
           await updateSettings(defaultSettings);
-          
-          // Применяем тему из дефолтных настроек
-          applyTheme(defaultSettings.theme);
         }
       } else {
         // Пробуем загрузить из localStorage для веб-версии
@@ -92,13 +89,13 @@ export const SettingsProvider = ({ children }) => {
           try {
             const parsedSettings = JSON.parse(stored);
             
-            // Применяем настройки с дефолтными значениями для отсутствующих полей
+            // Мерджим с дефолтными настройками
             const mergedSettings = {
               ...defaultSettings,
               ...parsedSettings
             };
             
-            // Принудительно устанавливаем модель
+            // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: всегда устанавливаем модель claude-3-7-sonnet
             mergedSettings.model = 'claude-3-7-sonnet-20250219';
             
             setSettings(mergedSettings);
@@ -110,30 +107,19 @@ export const SettingsProvider = ({ children }) => {
             localStorage.setItem('claude-desktop-settings', JSON.stringify(mergedSettings));
           } catch (e) {
             console.error('Error parsing settings from localStorage:', e);
-            
-            // В случае ошибки используем дефолтные
             setSettings(defaultSettings);
             localStorage.setItem('claude-desktop-settings', JSON.stringify(defaultSettings));
-            
-            // Применяем тему из дефолтных настроек
-            applyTheme(defaultSettings.theme);
           }
         } else {
           // Если настройки не найдены, инициализируем дефолтными
-          localStorage.setItem('claude-desktop-settings', JSON.stringify(defaultSettings));
           setSettings(defaultSettings);
-          
-          // Применяем тему из дефолтных настроек
-          applyTheme(defaultSettings.theme);
+          localStorage.setItem('claude-desktop-settings', JSON.stringify(defaultSettings));
         }
       }
     } catch (err) {
       console.error('Ошибка загрузки настроек:', err);
       setError('Ошибка загрузки настроек: ' + (err.message || err));
-      
-      // В случае ошибки используем дефолтные настройки
-      setSettings(defaultSettings);
-      applyTheme(defaultSettings.theme);
+      setSettings(defaultSettings); // В случае ошибки используем дефолтные
     } finally {
       setLoading(false);
     }
@@ -142,122 +128,85 @@ export const SettingsProvider = ({ children }) => {
   // Сохранение настроек
   const updateSettings = useCallback(async (newSettings) => {
     try {
+      console.log('Сохранение настроек:', newSettings);
       setError(null);
       
-      // Очищаем null/undefined значения и делаем слияние с текущими настройками
-      const cleanSettings = {...settings};
-      for (const [key, value] of Object.entries(newSettings)) {
-        cleanSettings[key] = value === null || value === undefined ? '' : value;
-      }
-
-      // ОБЯЗАТЕЛЬНО устанавливаем правильную модель
-      cleanSettings.model = 'claude-3-7-sonnet-20250219';
-
-      console.log('Сохраняем настройки:', cleanSettings);
+      // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: всегда принудительно устанавливаем правильную модель
+      const settingsToSave = {
+        ...newSettings,
+        model: 'claude-3-7-sonnet-20250219' // Принудительная установка
+      };
+      
+      console.log('Настройки для сохранения (с принудительной моделью):', settingsToSave);
 
       if (window.electronAPI && window.electronAPI.updateSettings) {
         // Задержка для уверенности, что electronAPI загрузился
         await new Promise(resolve => setTimeout(resolve, 500));
         
-        try {
-          const result = await window.electronAPI.updateSettings(cleanSettings);
+        const result = await window.electronAPI.updateSettings(settingsToSave);
+        
+        if (result && result.success) {
+          // Применяем новые настройки
+          setSettings(settingsToSave);
           
-          if (result && result.success) {
-            // Сначала применяем тему
-            if (cleanSettings.theme) {
-              applyTheme(cleanSettings.theme);
-            }
-            
-            // Обновляем состояние
-            setSettings(cleanSettings);
-            console.log('Настройки успешно сохранены и применены');
-            
-            return true;
-          } else {
-            console.error('Ошибка при сохранении настроек:', result?.error);
-            setError(result?.error || 'Ошибка сохранения настроек');
-            return false;
+          // Применяем тему
+          if (settingsToSave.theme) {
+            applyTheme(settingsToSave.theme);
           }
-        } catch (apiError) {
-          console.error('Ошибка API при сохранении настроек:', apiError);
-          setError(`Ошибка API: ${apiError.message}`);
+          
+          console.log('Настройки успешно сохранены и применены');
+          return true;
+        } else if (result && result.error) {
+          console.error('Ошибка сохранения настроек:', result.error);
+          setError(result.error);
           return false;
         }
       } else {
-        // Для веб-версии
-        localStorage.setItem('claude-desktop-settings', JSON.stringify(cleanSettings));
+        // Сохраняем в localStorage для веб-версии
+        localStorage.setItem('claude-desktop-settings', JSON.stringify(settingsToSave));
+        setSettings(settingsToSave);
         
         // Применяем тему
-        if (cleanSettings.theme) {
-          applyTheme(cleanSettings.theme);
+        if (settingsToSave.theme) {
+          applyTheme(settingsToSave.theme);
         }
-        
-        // Обновляем состояние
-        setSettings(cleanSettings);
-        console.log('Настройки сохранены в localStorage');
         
         return true;
       }
+      
+      return false;
     } catch (err) {
-      console.error('Критическая ошибка сохранения настроек:', err);
+      console.error('Ошибка сохранения настроек:', err);
       setError('Ошибка сохранения настроек: ' + (err.message || err));
       return false;
     }
-  }, [settings]);
+  }, []);
 
   // Обновление одной настройки
   const updateSetting = useCallback(async (key, value) => {
-    // Проверяем наличие null/undefined значений
-    const safeValue = value === null || value === undefined ? '' : value;
+    console.log(`Обновление настройки: ${key} = ${value}`);
     
-    console.log(`Обновление настройки ${key}:`, safeValue);
-    
-    if (window.electronAPI && window.electronAPI.updateSetting) {
-      try {
-        // Задержка для надежности
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        const result = await window.electronAPI.updateSetting(key, safeValue);
-        
-        if (result && result.success) {
-          // Обновляем состояние
-          setSettings(prev => {
-            const updated = { ...prev, [key]: safeValue };
-            
-            // Если обновили тему - применяем её
-            if (key === 'theme') {
-              applyTheme(safeValue);
-            }
-            
-            // Если обновили модель - всегда ставим правильную
-            if (key === 'model') {
-              updated.model = 'claude-3-7-sonnet-20250219';
-            }
-            
-            return updated;
-          });
-          
-          return true;
-        }
-        
-        console.error(`Ошибка обновления настройки ${key}`);
-        return false;
-      } catch (error) {
-        console.error(`Ошибка обновления настройки ${key}:`, error);
-        return false;
+    try {
+      // КРИТИЧЕСКИЙ КОНТРОЛЬ: не даём менять модель на другую, только 3.7 Sonnet
+      if (key === 'model' && value !== 'claude-3-7-sonnet-20250219') {
+        console.warn('Попытка изменить модель отклонена! Фиксированная модель claude-3-7-sonnet-20250219');
+        value = 'claude-3-7-sonnet-20250219';
       }
-    } else {
-      // Если нет API, используем общую функцию
-      return await updateSettings({ [key]: safeValue });
+      
+      const newSettings = { ...settings, [key]: value };
+      return await updateSettings(newSettings);
+    } catch (error) {
+      console.error(`Ошибка обновления настройки ${key}:`, error);
+      return false;
     }
-  }, [updateSettings]);
+  }, [settings, updateSettings]);
 
   // Сброс настроек к значениям по умолчанию
   const resetSettings = useCallback(async () => {
     try {
       console.log('Сброс настроек к значениям по умолчанию');
-      await updateSettings(defaultSettings);
-      return true;
+      const result = await updateSettings(defaultSettings);
+      return result;
     } catch (err) {
       console.error('Ошибка сброса настроек:', err);
       return false;
@@ -266,13 +215,16 @@ export const SettingsProvider = ({ children }) => {
 
   // Функция для применения темы
   const applyTheme = (theme) => {
-    console.log('Применение темы:', theme);
+    console.log(`Применение темы: ${theme}`);
     
     if (!theme || theme === 'auto') {
       // Автоматический выбор в зависимости от системных предпочтений
       const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-      document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+      const themeToApply = prefersDark ? 'dark' : 'light';
+      console.log(`Автоматический выбор темы: ${themeToApply}`);
+      document.documentElement.setAttribute('data-theme', themeToApply);
     } else {
+      console.log(`Установка темы: ${theme}`);
       document.documentElement.setAttribute('data-theme', theme);
     }
   };

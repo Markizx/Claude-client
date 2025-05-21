@@ -84,7 +84,14 @@ const SettingsDialog = ({ open, onClose }) => {
   // Загрузка настроек при открытии диалога
   useEffect(() => {
     if (open && settings) {
-      setLocalSettings({ ...localSettings, ...settings });
+      // КРИТИЧНОЕ ИСПРАВЛЕНИЕ: всегда принудительно устанавливаем модель
+      const settingsWithFixedModel = {
+        ...settings,
+        model: 'claude-3-7-sonnet-20250219'
+      };
+      
+      setLocalSettings(settingsWithFixedModel);
+      console.log('Настройки загружены в диалог:', settingsWithFixedModel);
     }
   }, [open, settings]);
 
@@ -93,6 +100,12 @@ const SettingsDialog = ({ open, onClose }) => {
   };
 
   const handleInputChange = (field, value) => {
+    // Для модели всегда принудительно устанавливаем единственно верное значение
+    if (field === 'model') {
+      value = 'claude-3-7-sonnet-20250219';
+      console.log('Попытка изменения модели заблокирована, используется фиксированная модель');
+    }
+    
     setLocalSettings({
       ...localSettings,
       [field]: value
@@ -104,7 +117,20 @@ const SettingsDialog = ({ open, onClose }) => {
   };
 
   const handleSelectChange = (field) => (event) => {
+    // Для модели блокируем изменение
+    if (field === 'model') {
+      console.log('Попытка изменения модели через select заблокирована');
+      return;
+    }
+    
     handleInputChange(field, event.target.value);
+  };
+  
+  // Специальный обработчик для выбора модели (всегда лишь одна модель)
+  const handleModelChange = (event) => {
+    console.log('Попытка изменить модель игнорируется, установлена фиксированная модель');
+    // Принудительно устанавливаем только claude-3-7-sonnet
+    handleInputChange('model', 'claude-3-7-sonnet-20250219');
   };
 
   const handleSliderChange = (field) => (event, value) => {
@@ -116,7 +142,15 @@ const SettingsDialog = ({ open, onClose }) => {
       setLoading(true);
       setError(null);
       
-      const success = await updateSettings(localSettings);
+      // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Гарантируем, что модель всегда claude-3-7-sonnet
+      const settingsToSave = {
+        ...localSettings,
+        model: 'claude-3-7-sonnet-20250219'
+      };
+      
+      console.log('Сохранение настроек с принудительной моделью Claude 3.7 Sonnet:', settingsToSave);
+      
+      const success = await updateSettings(settingsToSave);
       
       if (success) {
         setSuccess(true);
@@ -133,12 +167,13 @@ const SettingsDialog = ({ open, onClose }) => {
 
   const handleReset = () => {
     // Сбрасываем локальные настройки к значениям по умолчанию
+    // Но сохраняем фиксированную модель!
     setLocalSettings({
       language: 'ru',
       theme: 'light',
       autoSave: true,
       confirmDelete: true,
-      model: 'claude-3-7-sonnet-20250219',
+      model: 'claude-3-7-sonnet-20250219', // Фиксированная!
       maxTokens: 4096,
       temperature: 0.7,
       topP: 1.0,
@@ -336,16 +371,18 @@ const SettingsDialog = ({ open, onClose }) => {
               <InputLabel id="model-label">Модель</InputLabel>
               <Select
                 labelId="model-label"
-                value={localSettings.model}
+                value={'claude-3-7-sonnet-20250219'} // Принудительно отображаем только эту модель
                 label="Модель"
-                onChange={handleSelectChange('model')}
+                onChange={handleModelChange}
+                disabled={true} // Блокируем выбор - всегда только одна модель
               >
-                {availableModels.map(model => (
-                  <MenuItem key={model.value} value={model.value}>
-                    {model.label}
-                  </MenuItem>
-                ))}
+                <MenuItem value={'claude-3-7-sonnet-20250219'}>
+                  Claude 3.7 Sonnet
+                </MenuItem>
               </Select>
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+                Модель фиксирована на Claude 3.7 Sonnet для оптимальной работы приложения
+              </Typography>
             </FormControl>
 
             <TextField

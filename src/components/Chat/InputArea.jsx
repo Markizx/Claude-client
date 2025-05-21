@@ -141,8 +141,21 @@ const InputArea = ({
         // Фильтруем null значения (файлы с ошибками)
         const validFiles = filesToSend.filter(file => file !== null);
 
-        // Отправляем сообщение с файлами
-        await onSendMessage(message, validFiles);
+        // Получаем файлы проекта, если выбран проект
+        let projectFiles = [];
+        if (selectedProjectId) {
+          try {
+            console.log(`Получение файлов проекта ${selectedProjectId}`);
+            // Попытка загрузить файлы проекта через API
+            projectFiles = await window.electronAPI.getProjectFiles(selectedProjectId) || [];
+            console.log(`Загружено ${projectFiles.length} файлов проекта`);
+          } catch (projectError) {
+            console.error('Ошибка при загрузке файлов проекта:', projectError);
+          }
+        }
+
+        // Отправляем сообщение с файлами и файлами проекта
+        await onSendMessage(message, validFiles, projectFiles);
         
         // Очищаем форму после успешной отправки
         setMessage('');
@@ -228,6 +241,7 @@ const InputArea = ({
   // Обработка изменения проекта
   const handleProjectChange = (e) => {
     if (onProjectSelect) {
+      console.log(`Выбран проект: ${e.target.value}`);
       onProjectSelect(e.target.value);
     }
   };
