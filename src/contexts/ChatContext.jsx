@@ -120,7 +120,7 @@ export const ChatProvider = ({ children }) => {
       
       // Проверяем доступность electronAPI
       if (!window.electronAPI) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
       
       if (!window.electronAPI) {
@@ -130,6 +130,7 @@ export const ChatProvider = ({ children }) => {
       }
       
       const chats = await window.electronAPI.getChats();
+      console.log('Загружено чатов:', chats?.length || 0);
       dispatch({ type: ActionTypes.SET_CHATS, payload: chats || [] });
     } catch (error) {
       console.error('Error loading chats:', error);
@@ -143,7 +144,7 @@ export const ChatProvider = ({ children }) => {
       dispatch({ type: ActionTypes.SET_LOADING, payload: true });
       
       if (!window.electronAPI) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
       
       if (!window.electronAPI) {
@@ -153,6 +154,7 @@ export const ChatProvider = ({ children }) => {
       }
       
       const messages = await window.electronAPI.getMessages(chatId);
+      console.log(`Загружено сообщений для чата ${chatId}:`, messages?.length || 0);
       dispatch({ type: ActionTypes.SET_MESSAGES, payload: messages || [] });
     } catch (error) {
       console.error('Error loading messages:', error);
@@ -178,7 +180,7 @@ export const ChatProvider = ({ children }) => {
       if (!chat || !state.chats.length) {
         // Проверяем доступность electronAPI
         if (!window.electronAPI) {
-          await new Promise(resolve => setTimeout(resolve, 500));
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
         
         if (!window.electronAPI) {
@@ -216,7 +218,7 @@ export const ChatProvider = ({ children }) => {
       
       // Проверяем доступность electronAPI
       if (!window.electronAPI) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
       
       if (!window.electronAPI) {
@@ -231,6 +233,8 @@ export const ChatProvider = ({ children }) => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
+      
+      console.log('Создание нового чата:', newChat);
       
       // Отправляем запрос на создание чата в базе данных
       const result = await window.electronAPI.createChat(newChat);
@@ -255,7 +259,7 @@ export const ChatProvider = ({ children }) => {
       
       // Проверяем доступность electronAPI
       if (!window.electronAPI) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
       
       if (!window.electronAPI) {
@@ -274,6 +278,8 @@ export const ChatProvider = ({ children }) => {
         ...updates,
         updatedAt: new Date().toISOString(),
       };
+      
+      console.log('Обновление чата:', updatedChat);
       
       // Отправляем запрос на обновление чата в базе данных
       const result = await window.electronAPI.updateChat(updatedChat);
@@ -298,7 +304,7 @@ export const ChatProvider = ({ children }) => {
       
       // Проверяем доступность electronAPI
       if (!window.electronAPI) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
       
       if (!window.electronAPI) {
@@ -307,25 +313,30 @@ export const ChatProvider = ({ children }) => {
         return false;
       }
       
+      console.log('Удаление чата:', chatId);
+      
+      // ВАЖНО: Сначала удаляем из состояния UI, потом из базы
+      dispatch({ type: ActionTypes.DELETE_CHAT, payload: chatId });
+      
       // Отправляем запрос на удаление чата из базы данных
       const result = await window.electronAPI.deleteChat(chatId);
       
-      // Удаляем чат из состояния
-      dispatch({ type: ActionTypes.DELETE_CHAT, payload: chatId });
-      
       if (!result || !result.success) {
         console.error('API error deleting chat:', result?.error);
+        // Но не отменяем удаление из UI, так как чат уже удален из интерфейса
       }
       
       return true;
     } catch (error) {
       console.error('Error deleting chat:', error);
       
-      // Все равно удаляем из локального состояния
+      // Все равно удаляем из локального состояния, чтобы UI был согласован
       dispatch({ type: ActionTypes.DELETE_CHAT, payload: chatId });
       
       dispatch({ type: ActionTypes.SET_ERROR, payload: error.message });
       return true; // Возвращаем true, чтобы UI показал что чат удален
+    } finally {
+      dispatch({ type: ActionTypes.SET_LOADING, payload: false });
     }
   }, []);
 
@@ -338,7 +349,7 @@ export const ChatProvider = ({ children }) => {
       
       // Проверяем доступность electronAPI
       if (!window.electronAPI) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
       
       if (!window.electronAPI) {
@@ -420,11 +431,24 @@ export const ChatProvider = ({ children }) => {
       // Добавляем сообщение в состояние
       dispatch({ type: ActionTypes.ADD_MESSAGE, payload: userMessage });
       
-      // Шаг 4: Отправляем сообщение в Claude API
+      // Подготовка файлов проекта, если они есть
+      const projectFilesForSending = projectFiles && projectFiles.length > 0 
+        ? projectFiles.map(file => ({
+          name: file.name,
+          path: file.path,
+          type: file.type,
+          size: file.size
+        }))
+        : [];
+      
+      console.log(`Отправка сообщения с ${attachments.length} файлами и ${projectFilesForSending.length} файлами проекта`);
+      
+      // Шаг 4: Отправляем сообщение в Claude API с учетом файлов проекта
       const claudeResponse = await window.electronAPI.sendToClaudeAI(
         content,
         attachments,
-        state.messages // История сообщений
+        state.messages,
+        projectFilesForSending // Передаем файлы проекта в API
       );
       
       if (!claudeResponse || claudeResponse.error) {
@@ -509,7 +533,7 @@ export const ChatProvider = ({ children }) => {
       
       // Проверяем доступность electronAPI
       if (!window.electronAPI) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
       
       if (!window.electronAPI) {

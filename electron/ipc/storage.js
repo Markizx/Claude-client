@@ -58,6 +58,9 @@ class SettingsStore {
   // Сохранение настроек в файл
   saveSettings(settings) {
     try {
+      // Принудительно устанавливаем модель Claude 3.7 Sonnet
+      settings.model = 'claude-3-7-sonnet-20250219';
+      
       this.settings = settings;
       fs.writeFileSync(this.settingsPath, JSON.stringify(settings, null, 2), 'utf8');
       return true;
@@ -77,6 +80,11 @@ class SettingsStore {
     if (!key) return false;
     
     try {
+      // Принудительно устанавливаем модель Claude 3.7 Sonnet если обновляется модель
+      if (key === 'model') {
+        value = 'claude-3-7-sonnet-20250219';
+      }
+      
       this.settings = { ...this.settings, [key]: value };
       return this.saveSettings(this.settings);
     } catch (error) {
@@ -90,6 +98,9 @@ class SettingsStore {
     if (!newSettings || typeof newSettings !== 'object') return false;
     
     try {
+      // Принудительно устанавливаем модель Claude 3.7 Sonnet
+      newSettings.model = 'claude-3-7-sonnet-20250219';
+      
       this.settings = { ...this.settings, ...newSettings };
       return this.saveSettings(this.settings);
     } catch (error) {
@@ -285,15 +296,28 @@ class StorageManager {
 
   // Settings methods
   getAllSettings() {
-    return this.settingsStore.getSettings();
+    let settings = this.settingsStore.getSettings();
+    
+    // Принудительно устанавливаем модель Claude 3.7 Sonnet
+    settings.model = 'claude-3-7-sonnet-20250219';
+    
+    return settings;
   }
 
   updateSetting(key, value) {
+    // Принудительно устанавливаем модель Claude 3.7 Sonnet если обновляется модель
+    if (key === 'model') {
+      value = 'claude-3-7-sonnet-20250219';
+    }
+    
     const success = this.settingsStore.updateSetting(key, value);
     return { success };
   }
 
   updateSettings(settings) {
+    // Принудительно устанавливаем модель Claude 3.7 Sonnet
+    settings.model = 'claude-3-7-sonnet-20250219';
+    
     const success = this.settingsStore.updateSettings(settings);
     return { success };
   }
@@ -361,6 +385,8 @@ class StorageManager {
         return { success: false, error: 'Chat ID is required' };
       }
       
+      console.log(`Удаление чата из базы данных: ${chatId}`);
+      
       // Start a transaction
       const transaction = this.db.transaction(() => {
         // Find files to delete
@@ -371,23 +397,31 @@ class StorageManager {
           WHERE m.chat_id = ?
         `).all(chatId);
         
+        console.log(`Найдено вложений для удаления: ${attachments.length}`);
+        
         // Delete message attachments
-        this.db.prepare(`
+        const attachmentResult = this.db.prepare(`
           DELETE FROM message_attachments
           WHERE message_id IN (SELECT id FROM messages WHERE chat_id = ?)
         `).run(chatId);
         
+        console.log(`Удалено вложений: ${attachmentResult.changes}`);
+        
         // Delete artifacts
-        this.db.prepare(`
+        const artifactResult = this.db.prepare(`
           DELETE FROM artifacts
           WHERE message_id IN (SELECT id FROM messages WHERE chat_id = ?)
         `).run(chatId);
         
+        console.log(`Удалено артефактов: ${artifactResult.changes}`);
+        
         // Delete messages
-        this.db.prepare('DELETE FROM messages WHERE chat_id = ?').run(chatId);
+        const messagesResult = this.db.prepare('DELETE FROM messages WHERE chat_id = ?').run(chatId);
+        console.log(`Удалено сообщений: ${messagesResult.changes}`);
         
         // Delete chat
-        this.db.prepare('DELETE FROM chats WHERE id = ?').run(chatId);
+        const chatResult = this.db.prepare('DELETE FROM chats WHERE id = ?').run(chatId);
+        console.log(`Удален чат: ${chatResult.changes > 0 ? 'да' : 'нет'}`);
         
         // Return files to delete
         return attachments;
@@ -396,21 +430,24 @@ class StorageManager {
       const filesToDelete = transaction();
       
       // Delete files asynchronously
-      setTimeout(() => {
-        for (const file of filesToDelete) {
-          try {
-            if (fs.existsSync(file.path)) {
-              fs.unlinkSync(file.path);
+      if (filesToDelete && filesToDelete.length > 0) {
+        setTimeout(() => {
+          for (const file of filesToDelete) {
+            try {
+              if (file.path && fs.existsSync(file.path)) {
+                fs.unlinkSync(file.path);
+                console.log(`Удален файл: ${file.path}`);
+              }
+            } catch (err) {
+              console.error(`Ошибка удаления файла ${file.path}:`, err);
             }
-          } catch (err) {
-            console.error(`Error deleting file ${file.path}:`, err);
           }
-        }
-      }, 100);
+        }, 100);
+      }
       
       return { success: true };
     } catch (error) {
-      console.error('Error deleting chat:', error);
+      console.error('Ошибка удаления чата:', error);
       return { success: false, error: error.message };
     }
   }
@@ -968,6 +1005,10 @@ class StorageManager {
           try {
             const settingsData = fs.readFileSync(settingsPath, 'utf8');
             const settings = JSON.parse(settingsData);
+            
+            // Принудительно устанавливаем модель Claude 3.7 Sonnet
+            settings.model = 'claude-3-7-sonnet-20250219';
+            
             this.settingsStore.saveSettings(settings);
           } catch (settingsError) {
             console.error('Error restoring settings:', settingsError);
