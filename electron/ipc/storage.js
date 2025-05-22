@@ -6,7 +6,7 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const Store = require('electron-store');
 
-// Класс для управления хранилищем настроек
+// Класс для управления хранилищем настроек (ТОЛЬКО electron-store)
 class SettingsStore {
   constructor() {
     this.store = new Store({
@@ -41,49 +41,56 @@ class SettingsStore {
       }
     });
     
-    // Проверяем и устанавливаем правильную модель при инициализации
-    const currentModel = this.store.get('model');
-    if (!currentModel || currentModel !== 'claude-3-7-sonnet-20250219') {
-      this.store.set('model', 'claude-3-7-sonnet-20250219');
-    }
-    
-    console.log('SettingsStore инициализирован с настройками:', this.store.store);
+    console.log('SettingsStore инициализирован с настройками:', this.getAllSettings());
   }
 
   // Получение всех настроек
-  getSettings() {
+  getAllSettings() {
     try {
       const settings = this.store.store;
+      
+      // Всегда проверяем и устанавливаем правильную модель
+      if (!settings.model || settings.model !== 'claude-3-7-sonnet-20250219') {
+        this.store.set('model', 'claude-3-7-sonnet-20250219');
+        settings.model = 'claude-3-7-sonnet-20250219';
+      }
+      
       console.log('Загружены настройки:', settings);
       return settings;
     } catch (error) {
       console.error('Ошибка загрузки настроек:', error);
-      return this.store.store; // возвращаем дефолтные
+      return this.store.defaults;
     }
   }
 
   // Сохранение всех настроек
-  saveSettings(settings) {
+  saveAllSettings(newSettings) {
     try {
-      if (!settings || typeof settings !== 'object') {
-        console.error('Неверный формат настроек:', settings);
+      if (!newSettings || typeof newSettings !== 'object') {
+        console.error('Неверный формат настроек:', newSettings);
         return false;
       }
 
-      // Очищаем null/undefined значения
-      const cleanSettings = {};
-      for (const [key, value] of Object.entries(settings)) {
-        cleanSettings[key] = value === null || value === undefined ? '' : value;
-      }
+      // Получаем текущие настройки
+      const currentSettings = this.getAllSettings();
+      
+      // Объединяем с новыми настройками
+      const mergedSettings = { ...currentSettings, ...newSettings };
       
       // Всегда устанавливаем правильную модель
-      cleanSettings.model = cleanSettings.model || 'claude-3-7-sonnet-20250219';
+      mergedSettings.model = 'claude-3-7-sonnet-20250219';
+      
+      // Очищаем null/undefined значения
+      const cleanSettings = {};
+      for (const [key, value] of Object.entries(mergedSettings)) {
+        cleanSettings[key] = value === null || value === undefined ? '' : value;
+      }
       
       // Сохраняем все настройки
       this.store.clear();
       this.store.set(cleanSettings);
       
-      console.log('Настройки сохранены:', cleanSettings);
+      console.log('Настройки успешно сохранены:', cleanSettings);
       return true;
     } catch (error) {
       console.error('Ошибка сохранения настроек:', error);
@@ -122,6 +129,8 @@ class SettingsStore {
   resetSettings() {
     try {
       this.store.clear();
+      // Устанавливаем дефолтные значения
+      this.store.set(this.store.defaults);
       console.log('Настройки сброшены к значениям по умолчанию');
       return true;
     } catch (error) {
@@ -315,18 +324,18 @@ class StorageManager {
     `);
   }
 
-  // Settings methods
+  // Settings methods - используем ТОЛЬКО SettingsStore
   getAllSettings() {
-    return this.settingsStore.getSettings();
+    return this.settingsStore.getAllSettings();
+  }
+
+  updateSettings(settings) {
+    const success = this.settingsStore.saveAllSettings(settings);
+    return { success };
   }
 
   updateSetting(key, value) {
     const success = this.settingsStore.updateSetting(key, value);
-    return { success };
-  }
-
-  updateSettings(settings) {
-    const success = this.settingsStore.saveSettings(settings);
     return { success };
   }
 
@@ -977,7 +986,7 @@ class StorageManager {
       
       // Если нужно сохранить и настройки, делаем это дополнительно
       const settingsPath = path.join(path.dirname(targetPath), 'settings.json');
-      fs.writeFileSync(settingsPath, JSON.stringify(this.settingsStore.getSettings(), null, 2), 'utf8');
+      fs.writeFileSync(settingsPath, JSON.stringify(this.settingsStore.getAllSettings(), null, 2), 'utf8');
       
       return { success: true, filePath: targetPath };
     } catch (error) {
@@ -1009,7 +1018,7 @@ class StorageManager {
           try {
             const settingsData = fs.readFileSync(settingsPath, 'utf8');
             const settings = JSON.parse(settingsData);
-            this.settingsStore.saveSettings(settings);
+            this.settingsStore.saveAllSettings(settings);
           } catch (settingsError) {
             console.error('Error restoring settings:', settingsError);
           }

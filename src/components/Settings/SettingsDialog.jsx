@@ -46,7 +46,7 @@ const TabPanel = ({ children, value, index, ...other }) => (
 );
 
 const SettingsDialog = ({ open, onClose }) => {
-  const { settings, updateSettings, resetSettings, error: settingsError, loading: settingsLoading } = useSettings();
+  const { settings, updateSettings, resetSettings, error: settingsError, loading: settingsLoading, apiReady } = useSettings();
   
   const [activeTab, setActiveTab] = useState(0);
   const [localSettings, setLocalSettings] = useState({
@@ -81,22 +81,24 @@ const SettingsDialog = ({ open, onClose }) => {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
 
-  // Загрузка настроек при открытии диалога
+  // Инициализация локальных настроек при открытии диалога
   useEffect(() => {
-    if (open && settings && !settingsLoading) {
-      console.log('Загружаем настройки в диалог:', settings);
-      setLocalSettings({ ...localSettings, ...settings });
+    if (open && settings && Object.keys(settings).length > 0 && !settingsLoading) {
+      console.log('Инициализируем локальные настройки:', settings);
+      setLocalSettings(prevLocal => ({ ...prevLocal, ...settings }));
       setError(null);
+      setSuccess(false);
     }
   }, [open, settings, settingsLoading]);
 
-  // Обновляем localSettings при изменении настроек из контекста
+  // Очистка состояния при закрытии диалога
   useEffect(() => {
-    if (settings && !settingsLoading) {
-      console.log('Обновляем локальные настройки из контекста:', settings);
-      setLocalSettings(prevLocal => ({ ...prevLocal, ...settings }));
+    if (!open) {
+      setError(null);
+      setSuccess(false);
+      setLoading(false);
     }
-  }, [settings, settingsLoading]);
+  }, [open]);
 
   const handleTabChange = (event, newValue) => {
     setActiveTab(newValue);
@@ -108,6 +110,10 @@ const SettingsDialog = ({ open, onClose }) => {
       ...prev,
       [field]: value
     }));
+    
+    // Очищаем ошибки при изменении
+    if (error) setError(null);
+    if (success) setSuccess(false);
   };
 
   const handleSwitchChange = (field) => (event) => {
@@ -127,7 +133,13 @@ const SettingsDialog = ({ open, onClose }) => {
       setLoading(true);
       setError(null);
       
+      if (!apiReady) {
+        setError('API не готов. Подождите немного и попробуйте снова.');
+        return;
+      }
+      
       console.log('Сохраняем настройки:', localSettings);
+      
       const success = await updateSettings(localSettings);
       
       if (success) {
@@ -148,8 +160,17 @@ const SettingsDialog = ({ open, onClose }) => {
 
   const handleReset = async () => {
     try {
+      if (!window.confirm('Вы уверены, что хотите сбросить все настройки к значениям по умолчанию?')) {
+        return;
+      }
+      
       setLoading(true);
       setError(null);
+      
+      if (!apiReady) {
+        setError('API не готов. Подождите немного и попробуйте снова.');
+        return;
+      }
       
       console.log('Сбрасываем настройки');
       const success = await resetSettings();
@@ -294,6 +315,13 @@ const SettingsDialog = ({ open, onClose }) => {
       </DialogTitle>
       
       <DialogContent dividers>
+        {/* Статус состояния */}
+        {!apiReady && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            API не готов. Подождите несколько секунд...
+          </Alert>
+        )}
+        
         {success && (
           <Alert severity="success" sx={{ mb: 2 }}>
             Настройки успешно сохранены!
@@ -520,7 +548,7 @@ const SettingsDialog = ({ open, onClose }) => {
                   variant="contained"
                   startIcon={<BackupIcon />}
                   onClick={handleBackup}
-                  disabled={loading}
+                  disabled={loading || !apiReady}
                 >
                   Создать резервную копию
                 </Button>
@@ -539,7 +567,7 @@ const SettingsDialog = ({ open, onClose }) => {
                   variant="outlined"
                   startIcon={<RestoreIcon />}
                   onClick={handleRestore}
-                  disabled={loading}
+                  disabled={loading || !apiReady}
                   color="warning"
                 >
                   Восстановить
@@ -585,7 +613,11 @@ const SettingsDialog = ({ open, onClose }) => {
       </DialogContent>
 
       <DialogActions>
-        <Button onClick={handleReset} startIcon={<RestoreIcon />} disabled={loading}>
+        <Button 
+          onClick={handleReset} 
+          startIcon={<RestoreIcon />} 
+          disabled={loading || !apiReady}
+        >
           Сбросить
         </Button>
         <Button onClick={handleClose} disabled={loading}>
@@ -595,7 +627,7 @@ const SettingsDialog = ({ open, onClose }) => {
           onClick={handleSave}
           variant="contained"
           startIcon={<SaveIcon />}
-          disabled={loading || settingsLoading}
+          disabled={loading || settingsLoading || !apiReady}
         >
           {loading ? 'Сохранение...' : 'Сохранить'}
         </Button>
