@@ -84,14 +84,7 @@ const SettingsDialog = ({ open, onClose }) => {
   // Загрузка настроек при открытии диалога
   useEffect(() => {
     if (open && settings) {
-      // КРИТИЧНОЕ ИСПРАВЛЕНИЕ: всегда принудительно устанавливаем модель
-      const settingsWithFixedModel = {
-        ...settings,
-        model: 'claude-3-7-sonnet-20250219'
-      };
-      
-      setLocalSettings(settingsWithFixedModel);
-      console.log('Настройки загружены в диалог:', settingsWithFixedModel);
+      setLocalSettings({ ...localSettings, ...settings });
     }
   }, [open, settings]);
 
@@ -100,12 +93,6 @@ const SettingsDialog = ({ open, onClose }) => {
   };
 
   const handleInputChange = (field, value) => {
-    // Для модели всегда принудительно устанавливаем единственно верное значение
-    if (field === 'model') {
-      value = 'claude-3-7-sonnet-20250219';
-      console.log('Попытка изменения модели заблокирована, используется фиксированная модель');
-    }
-    
     setLocalSettings({
       ...localSettings,
       [field]: value
@@ -117,20 +104,7 @@ const SettingsDialog = ({ open, onClose }) => {
   };
 
   const handleSelectChange = (field) => (event) => {
-    // Для модели блокируем изменение
-    if (field === 'model') {
-      console.log('Попытка изменения модели через select заблокирована');
-      return;
-    }
-    
     handleInputChange(field, event.target.value);
-  };
-  
-  // Специальный обработчик для выбора модели (всегда лишь одна модель)
-  const handleModelChange = (event) => {
-    console.log('Попытка изменить модель игнорируется, установлена фиксированная модель');
-    // Принудительно устанавливаем только claude-3-7-sonnet
-    handleInputChange('model', 'claude-3-7-sonnet-20250219');
   };
 
   const handleSliderChange = (field) => (event, value) => {
@@ -138,66 +112,33 @@ const SettingsDialog = ({ open, onClose }) => {
   };
 
   const handleSave = async () => {
-  try {
-    setLoading(true);
-    setError(null);
-    
-    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Гарантируем, что модель всегда claude-3-7-sonnet
-    const settingsToSave = {
-      ...localSettings,
-      model: 'claude-3-7-sonnet-20250219'
-    };
-    
-    console.log('Сохранение настроек с принудительной моделью Claude 3.7 Sonnet:', settingsToSave);
-    
-    // Добавляем повторные попытки
-    let success = false;
-    let attempts = 0;
-    const maxAttempts = 3;
-    
-    while (!success && attempts < maxAttempts) {
-      attempts++;
-      try {
-        success = await updateSettings(settingsToSave);
-        
-        if (success) {
-          // После успешного сохранения, обновляем тему в DOM
-          document.documentElement.setAttribute('data-theme', settingsToSave.theme || 'light');
-          setSuccess(true);
-          setTimeout(() => setSuccess(false), 3000);
-          break;
-        } else {
-          console.warn(`Попытка ${attempts}: Не удалось сохранить настройки`);
-          await new Promise(resolve => setTimeout(resolve, 300));
-        }
-      } catch (attemptError) {
-        console.error(`Попытка ${attempts} сохранения настроек завершилась ошибкой:`, attemptError);
-        if (attempts === maxAttempts) {
-          throw attemptError;
-        }
-        await new Promise(resolve => setTimeout(resolve, 500));
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const success = await updateSettings(localSettings);
+      
+      if (success) {
+        setSuccess(true);
+        setTimeout(() => setSuccess(false), 3000);
+      } else {
+        setError('Не удалось сохранить настройки');
       }
+    } catch (err) {
+      setError(`Ошибка сохранения настроек: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
-    
-    if (!success) {
-      setError('Не удалось сохранить настройки после нескольких попыток');
-    }
-  } catch (err) {
-    setError(`Ошибка сохранения настроек: ${err.message}`);
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   const handleReset = () => {
     // Сбрасываем локальные настройки к значениям по умолчанию
-    // Но сохраняем фиксированную модель!
     setLocalSettings({
       language: 'ru',
       theme: 'light',
       autoSave: true,
       confirmDelete: true,
-      model: 'claude-3-7-sonnet-20250219', // Фиксированная!
+      model: 'claude-3-7-sonnet-20250219',
       maxTokens: 4096,
       temperature: 0.7,
       topP: 1.0,
@@ -395,18 +336,16 @@ const SettingsDialog = ({ open, onClose }) => {
               <InputLabel id="model-label">Модель</InputLabel>
               <Select
                 labelId="model-label"
-                value={'claude-3-7-sonnet-20250219'} // Принудительно отображаем только эту модель
+                value={localSettings.model}
                 label="Модель"
-                onChange={handleModelChange}
-                disabled={true} // Блокируем выбор - всегда только одна модель
+                onChange={handleSelectChange('model')}
               >
-                <MenuItem value={'claude-3-7-sonnet-20250219'}>
-                  Claude 3.7 Sonnet
-                </MenuItem>
+                {availableModels.map(model => (
+                  <MenuItem key={model.value} value={model.value}>
+                    {model.label}
+                  </MenuItem>
+                ))}
               </Select>
-              <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
-                Модель фиксирована на Claude 3.7 Sonnet для оптимальной работы приложения
-              </Typography>
             </FormControl>
 
             <TextField

@@ -51,60 +51,40 @@ class FileHandler {
         fs.mkdirSync(this.uploadDir, { recursive: true });
       }
       
-      console.log(`Загрузка файла: ${fileName} (${fileData.type || 'unknown type'})`);
-      
       // Записываем данные файла на диск
       if (fileData.data) {
         try {
           // Если данные переданы как base64 строка
           if (typeof fileData.data === 'string') {
-            // Проверяем, не является ли это data URL
-            let buffer;
-            if (fileData.data.startsWith('data:')) {
-              // Извлекаем base64 данные из data URL
-              const base64Data = fileData.data.split(',')[1];
-              buffer = Buffer.from(base64Data, 'base64');
-            } else {
-              buffer = Buffer.from(fileData.data, 'base64');
-            }
-            
+            const buffer = Buffer.from(fileData.data, 'base64');
             fs.writeFileSync(filePath, buffer);
-            console.log(`Файл сохранен из base64: ${filePath} (${buffer.length} байт)`);
+            console.log(`File saved from base64: ${filePath} (${buffer.length} bytes)`);
           }
           // Если данные переданы как массив байтов
           else if (Array.isArray(fileData.data)) {
             const buffer = Buffer.from(fileData.data);
             fs.writeFileSync(filePath, buffer);
-            console.log(`Файл сохранен из массива байтов: ${filePath} (${buffer.length} байт)`);
+            console.log(`File saved from byte array: ${filePath} (${buffer.length} bytes)`);
           }
           // Если данные переданы как ArrayBuffer
-          else if (fileData.data instanceof ArrayBuffer || 
-                   (typeof fileData.data === 'object' && fileData.data !== null)) {
-            let buffer;
-            try {
-              buffer = Buffer.from(fileData.data);
-            } catch (err) {
-              // Если не удалось напрямую, пробуем преобразовать
-              const uint8Array = new Uint8Array(fileData.data);
-              buffer = Buffer.from(uint8Array);
-            }
-            
+          else if (fileData.data instanceof ArrayBuffer) {
+            const buffer = Buffer.from(fileData.data);
             fs.writeFileSync(filePath, buffer);
-            console.log(`Файл сохранен из ArrayBuffer: ${filePath} (${buffer.length} байт)`);
+            console.log(`File saved from ArrayBuffer: ${filePath} (${buffer.length} bytes)`);
           } 
           else {
-            throw new Error(`Неподдерживаемый формат данных: ${typeof fileData.data}`);
+            throw new Error('Unsupported data format');
           }
         } catch (err) {
-          console.error('Ошибка сохранения данных файла:', err);
+          console.error('Error saving file data:', err);
           throw err;
         }
       } else if (fileData.path) {
         // Если передан путь, копируем файл
         fs.copyFileSync(fileData.path, filePath);
-        console.log(`Файл скопирован: ${fileData.path} -> ${filePath}`);
+        console.log(`File copied: ${fileData.path} -> ${filePath}`);
       } else {
-        throw new Error('Нет данных файла');
+        throw new Error('No file data provided');
       }
       
       // Возвращаем метаданные файла
@@ -117,7 +97,7 @@ class FileHandler {
         size: fileData.size || fs.statSync(filePath).size
       };
     } catch (error) {
-      console.error('Ошибка обработки загрузки файла:', error);
+      console.error('Error processing file upload:', error);
       return { success: false, error: error.message || String(error) };
     }
   }

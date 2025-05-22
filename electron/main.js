@@ -72,17 +72,10 @@ function loadIPCModules() {
       }
     }
     
-    console.log('Загрузка IPC модулей из:', basePath);
-    
     // Загружаем модули
     const apiHandlers = require(path.join(basePath, 'api.js'));
-    console.log('API модуль загружен');
-    
     const fileHandlers = require(path.join(basePath, 'files.js'));
-    console.log('Files модуль загружен');
-    
     const storageHandlers = require(path.join(basePath, 'storage.js'));
-    console.log('Storage модуль загружен');
     
     return { apiHandlers, fileHandlers, storageHandlers };
   } catch (error) {
@@ -197,37 +190,15 @@ app.whenReady().then(() => {
   const { apiHandlers, fileHandlers, storageHandlers } = loadIPCModules();
   
   try {
-    console.log('Регистрация IPC обработчиков...');
-    
     // Регистрация обработчиков
     apiHandlers.register(ipcMain);
-    console.log('API обработчики зарегистрированы');
-    
     fileHandlers.register(ipcMain);
-    console.log('File обработчики зарегистрированы');
-    
     storageHandlers.register(ipcMain);
-    console.log('Storage обработчики зарегистрированы');
     
     // Регистрация дополнительных базовых обработчиков
     setupBasicHandlers();
     
-    console.log('Все IPC обработчики зарегистрированы успешно');
-    
-    // Добавим простой обработчик для диагностики
-    ipcMain.handle('app:diagnostics', () => {
-      return {
-        isReady: true,
-        platform: process.platform,
-        appPath: app.getAppPath(),
-        userData: app.getPath('userData'),
-        modules: {
-          apiHandlers: !!apiHandlers,
-          fileHandlers: !!fileHandlers,
-          storageHandlers: !!storageHandlers
-        }
-      };
-    });
+    console.log('IPC обработчики зарегистрированы успешно');
   } catch (error) {
     console.error('Ошибка регистрации IPC обработчиков:', error);
   }

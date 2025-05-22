@@ -77,57 +77,26 @@ const ChatView = () => {
   }, [messages]);
 
   // Обработка отправки сообщения
-const handleSendMessage = async (content, files) => {
-  if (!content.trim() && (!files || files.length === 0)) {
-    return;
-  }
-
-  try {
-    // Если выбран проект, получаем его файлы как контекст
-    let projectFiles = [];
-    if (selectedProjectId) {
-      console.log(`Выбран проект с ID: ${selectedProjectId}, загружаем файлы...`);
-      
-      // Если есть projects, ищем в кэше
-      if (projects && projects.length > 0) {
-        const selectedProject = projects.find(p => p.id === selectedProjectId);
-        if (selectedProject) {
-          console.log(`Найден проект: ${selectedProject.title || selectedProject.name}`);
-          
-          // Явно загружаем файлы проекта через API
-          try {
-            const projectFilesResult = await window.electronAPI.getProjectFiles(selectedProjectId);
-            if (Array.isArray(projectFilesResult) && projectFilesResult.length > 0) {
-              projectFiles = projectFilesResult;
-              console.log(`Загружено ${projectFiles.length} файлов проекта`);
-            } else {
-              console.log('Файлы проекта не найдены или пустой массив');
-            }
-          } catch (fileError) {
-            console.error('Ошибка загрузки файлов проекта:', fileError);
-          }
-        } else {
-          console.log(`Проект с ID ${selectedProjectId} не найден в кэше`);
-        }
-      } else {
-        // Если projects не доступен, загружаем файлы напрямую
-        try {
-          const projectFilesResult = await window.electronAPI.getProjectFiles(selectedProjectId);
-          if (Array.isArray(projectFilesResult)) {
-            projectFiles = projectFilesResult;
-            console.log(`Загружено ${projectFiles.length} файлов проекта напрямую`);
-          }
-        } catch (fileError) {
-          console.error('Ошибка загрузки файлов проекта напрямую:', fileError);
-        }
-      }
+  const handleSendMessage = async (content, files) => {
+    if (!content.trim() && (!files || files.length === 0)) {
+      return;
     }
 
-    await sendMessage(content, files, projectFiles);
-  } catch (error) {
-    setError('Ошибка при отправке сообщения: ' + (error.message || String(error)));
-  }
-};
+    try {
+      // Если выбран проект, получаем его файлы как контекст
+      let projectFiles = [];
+      if (selectedProjectId) {
+        const selectedProject = projects.find(p => p.id === selectedProjectId);
+        if (selectedProject && selectedProject.files) {
+          projectFiles = selectedProject.files;
+        }
+      }
+
+      await sendMessage(content, files, projectFiles);
+    } catch (error) {
+      setError('Ошибка при отправке сообщения: ' + (error.message || String(error)));
+    }
+  };
 
   // Обработка действий с сообщениями
   const handleMessageAction = async (action, data) => {

@@ -79,7 +79,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
       });
     } else if (file && file.path) {
-      // Если передан путь, копируем файл
+      // Если уже есть путь к файлу (например, из диалога выбора файла)
       return ipcRenderer.invoke('files:upload', file);
     } else {
       // Прочие случаи
@@ -94,9 +94,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveFileDialog: (defaultPath, filters) => ipcRenderer.invoke('files:saveDialog', defaultPath, filters),
   createTempFile: (name, data) => ipcRenderer.invoke('files:createTempFile', { name, data }),
   
-  // Claude AI operations - ОБНОВЛЕНО: добавлен параметр projectFiles
-  sendToClaudeAI: (content, attachments, history, projectFiles = []) => 
-    ipcRenderer.invoke('api:sendToClaudeAI', { content, attachments, history, projectFiles }),
+  // Claude AI operations
+  sendToClaudeAI: (content, attachments, history) => 
+    ipcRenderer.invoke('api:sendToClaudeAI', { content, attachments, history }),
   
   // Settings operations
   getSettings: () => ipcRenderer.invoke('settings:getAll'),

@@ -17,7 +17,7 @@ class ClaudeAPIHandler {
   constructor() {
     this.baseUrl = 'https://api.anthropic.com';
     this.apiVersion = '2023-06-01';
-    // Явно устанавливаем модель по умолчанию - ФИКСИРОВАННАЯ МОДЕЛЬ!
+    // Явно устанавливаем модель по умолчанию
     this.defaultModel = 'claude-3-7-sonnet-20250219';
   }
 
@@ -101,7 +101,7 @@ class ClaudeAPIHandler {
   }
 
   // Send message to Claude API
-  async sendMessageToClaudeAI(content, attachments = [], history = [], projectFiles = []) {
+  async sendMessageToClaudeAI(content, attachments = [], history = []) {
     const apiKey = await this.getApiKey();
     
     if (!apiKey) {
@@ -166,71 +166,6 @@ class ClaudeAPIHandler {
       }
     }
     
-    // Добавляем файлы проекта как контекст
-    if (projectFiles && projectFiles.length > 0) {
-      console.log(`Обработка ${projectFiles.length} файлов проекта`);
-      
-      // Добавляем заголовок секции контекста проекта
-      messageContent.push({
-        type: 'text',
-        text: `\n\n### КОНТЕКСТ ПРОЕКТА (${projectFiles.length} файлов) ###\n`
-      });
-      
-      // Обрабатываем каждый файл
-      for (const projectFile of projectFiles) {
-        try {
-          if (!projectFile.path || !fs.existsSync(projectFile.path)) {
-            console.warn(`Файл проекта не найден: ${projectFile.path}`);
-            continue;
-          }
-          
-          const fileBuffer = fs.readFileSync(projectFile.path);
-          const mediaType = this.getMediaType(projectFile.type, projectFile.name);
-          
-          // Если это изображение
-          if (this.isImageFile(mediaType)) {
-            messageContent.push({
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: mediaType,
-                data: fileBuffer.toString('base64')
-              }
-            });
-            console.log(`Добавлено изображение из проекта: ${projectFile.name} (${mediaType})`);
-          } else {
-            // Для текстовых файлов
-            try {
-              const textContent = fileBuffer.toString('utf8');
-              
-              messageContent.push({
-                type: 'text',
-                text: `### Файл проекта: ${projectFile.name} ###\n\n${textContent}\n\n`
-              });
-              
-              console.log(`Добавлен текстовый файл из проекта: ${projectFile.name} (${mediaType})`);
-            } catch (error) {
-              console.error(`Ошибка чтения файла проекта ${projectFile.name}:`, error);
-              
-              // Для бинарных файлов только информация
-              messageContent.push({
-                type: 'text',
-                text: `[Бинарный файл проекта: ${projectFile.name}, тип: ${mediaType}, размер: ${fileBuffer.length} байт]`
-              });
-            }
-          }
-        } catch (fileError) {
-          console.error(`Ошибка обработки файла проекта ${projectFile.name}:`, fileError);
-        }
-      }
-      
-      // Добавляем разделитель после файлов проекта
-      messageContent.push({
-        type: 'text',
-        text: `\n### КОНЕЦ КОНТЕКСТА ПРОЕКТА ###\n\n`
-      });
-    }
-    
     // Add text content
     messageContent.push({
       type: 'text',
@@ -286,19 +221,32 @@ class ClaudeAPIHandler {
 
 Всегда отвечай на русском языке, если не попросят иначе.`;
     
-    // САМОЕ ВАЖНОЕ ИСПРАВЛЕНИЕ: жестко фиксируем модель
-    // Принудительно устанавливаем только claude-3-7-sonnet-20250219
-    const modelName = 'claude-3-7-sonnet-20250219';
-    const maxTokens = 4096;
-    const temperature = 0.7;
-    const topP = 1.0;
+    // Получаем настройки модели
+    const settingsStore = new Store({ name: 'claude-desktop-settings' });
+    let settings = settingsStore.get('settings') || {};
+    
+    // Важное исправление: получаем настройки напрямую, если они не вложены в объект 'settings'
+    if (!settings.model) {
+      try {
+        settings = settingsStore.get('') || {};
+      } catch (error) {
+        console.error('Error getting direct settings:', error);
+      }
+    }
+    
+    // Используем настройки или значения по умолчанию
+    // Принудительно используем правильную модель, если настройки не найдены
+    const modelName = settings.model || this.defaultModel;
+    const maxTokens = settings.maxTokens || 4096;
+    const temperature = settings.temperature || 0.7;
+    const topP = settings.topP || 1.0;
     
     // Make API request to Claude
     try {
-      console.log(`Отправка запроса Claude API с моделью: ${modelName}`);
+      console.log(`Sending request to Claude API with model: ${modelName}`);
       
       const requestData = {
-        model: modelName, // Жестко фиксированная модель
+        model: modelName,
         max_tokens: maxTokens,
         messages: messages,
         system: systemPrompt,
@@ -308,7 +256,6 @@ class ClaudeAPIHandler {
       
       console.log('Request data (without file content):', JSON.stringify({
         ...requestData,
-        model: modelName, // Явно логируем модель для проверки
         messages: requestData.messages.map(msg => ({
           role: msg.role,
           content: Array.isArray(msg.content) 
@@ -332,9 +279,6 @@ class ClaudeAPIHandler {
           timeout: 60000 // 60 seconds timeout
         }
       );
-      
-      // Проверяем, какая модель реально использовалась
-      console.log(`Полученный ответ от модели: ${response.data.model}`);
       
       // Extract and return Claude's response
       if (response.data && response.data.content && response.data.content.length > 0) {
@@ -449,12 +393,10 @@ function register(ipcMainInstance) {
     }
   });
   
-  // ВАЖНОЕ ИСПРАВЛЕНИЕ: добавляем параметр projectFiles
   // Send message to Claude AI
-  ipcMainInstance.handle('api:sendToClaudeAI', async (_event, { content, attachments = [], history = [], projectFiles = [] }) => {
+  ipcMainInstance.handle('api:sendToClaudeAI', async (_event, { content, attachments = [], history = [] }) => {
     try {
-      console.log(`Отправка сообщения в Claude с ${attachments.length} вложениями и ${projectFiles.length} файлами проекта`);
-      return await apiHandler.sendMessageToClaudeAI(content, attachments, history, projectFiles);
+      return await apiHandler.sendMessageToClaudeAI(content, attachments, history);
     } catch (error) {
       console.error('Claude API error:', error);
       return { error: error.message || 'Unknown error' };
