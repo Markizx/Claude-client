@@ -112,7 +112,6 @@ export const ProjectProvider = ({ children }) => {
     try {
       dispatch({ type: ActionTypes.SET_LOADING, payload: true });
       
-      // Проверяем доступность electronAPI
       if (!window.electronAPI) {
         await new Promise(resolve => setTimeout(resolve, 500));
       }
@@ -123,34 +122,40 @@ export const ProjectProvider = ({ children }) => {
         return;
       }
       
+      console.log('ProjectContext: загружаем проекты...');
       const projects = await window.electronAPI.getProjects();
-      dispatch({ type: ActionTypes.SET_PROJECTS, payload: projects || [] });
+      console.log('ProjectContext: получено проектов:', projects?.length || 0);
+      
+      if (projects && projects.length > 0) {
+        // ДОБАВЛЕНО: для каждого проекта загружаем его файлы
+        const projectsWithFiles = await Promise.all(
+          projects.map(async (project) => {
+            try {
+              console.log(`ProjectContext: загружаем файлы для проекта ${project.name}...`);
+              const files = await window.electronAPI.getProjectFiles(project.id);
+              console.log(`ProjectContext: получено файлов для ${project.name}:`, files?.length || 0);
+              
+              return {
+                ...project,
+                files: files || []
+              };
+            } catch (error) {
+              console.error(`Ошибка загрузки файлов для проекта ${project.name}:`, error);
+              return {
+                ...project,
+                files: []
+              };
+            }
+          })
+        );
+        
+        console.log('ProjectContext: проекты с файлами:', projectsWithFiles);
+        dispatch({ type: ActionTypes.SET_PROJECTS, payload: projectsWithFiles });
+      } else {
+        dispatch({ type: ActionTypes.SET_PROJECTS, payload: [] });
+      }
     } catch (error) {
       console.error('Error loading projects:', error);
-      dispatch({ type: ActionTypes.SET_ERROR, payload: error.message });
-    }
-  };
-
-  // Load files for a specific project
-  const loadFiles = async (projectId) => {
-    try {
-      dispatch({ type: ActionTypes.SET_LOADING, payload: true });
-      
-      // Проверяем доступность electronAPI
-      if (!window.electronAPI) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-      
-      if (!window.electronAPI) {
-        console.error('electronAPI не доступен при загрузке файлов проекта');
-        dispatch({ type: ActionTypes.SET_ERROR, payload: 'API не доступен' });
-        return;
-      }
-      
-      const files = await window.electronAPI.getProjectFiles(projectId);
-      dispatch({ type: ActionTypes.SET_FILES, payload: files || [] });
-    } catch (error) {
-      console.error('Error loading files:', error);
       dispatch({ type: ActionTypes.SET_ERROR, payload: error.message });
     }
   };

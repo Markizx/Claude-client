@@ -81,20 +81,28 @@ export const SettingsProvider = ({ children }) => {
     console.log('Настройки интерфейса применены:', currentSettings);
   }, [applyTheme]);
 
-  // Синхронизация с API handler
+  // КРИТИЧЕСКИ ВАЖНАЯ синхронизация с API handler
   const syncWithAPIHandler = useCallback(async (settingsToSync) => {
     try {
       if (window.electronAPI) {
-        // Отправляем настройки в API handler для кеширования
+        console.log('SettingsContext: ПРИНУДИТЕЛЬНО синхронизируем настройки с API handler:', settingsToSync);
+        
+        // Отправляем настройки напрямую в API handler через специальный метод
         const result = await window.electronAPI.updateSettings(settingsToSync);
-        if (!result.success) {
-          console.warn('Не удалось синхронизировать настройки с API handler:', result.error);
+        if (result && result.success) {
+          console.log('SettingsContext: настройки успешно синхронизированы с API handler');
+          return true;
         } else {
-          console.log('Настройки синхронизированы с API handler');
+          console.warn('SettingsContext: не удалось синхронизировать настройки с API handler:', result?.error);
+          return false;
         }
+      } else {
+        console.warn('SettingsContext: electronAPI недоступен для синхронизации');
+        return false;
       }
     } catch (error) {
-      console.error('Ошибка синхронизации с API handler:', error);
+      console.error('SettingsContext: ошибка синхронизации с API handler:', error);
+      return false;
     }
   }, []);
 
@@ -113,7 +121,7 @@ export const SettingsProvider = ({ children }) => {
     return hasAPI;
   }, []);
 
-  // Загрузка настроек
+  // Загрузка настроек с принудительной синхронизацией
   const loadSettings = useCallback(async () => {
     try {
       setLoading(true);
@@ -134,14 +142,22 @@ export const SettingsProvider = ({ children }) => {
         // Объединяем с дефолтными настройками
         const mergedSettings = { ...defaultSettings, ...savedSettings };
         
+        console.log('SettingsContext: загружены настройки из хранилища:', mergedSettings);
+        
         setSettings(mergedSettings);
         applyInterfaceSettings(mergedSettings);
         
-        // Синхронизируем с API handler
-        await syncWithAPIHandler(mergedSettings);
+        // КРИТИЧЕСКИ ВАЖНО: Принудительно синхронизируем с API handler
+        console.log('SettingsContext: принудительно синхронизируем загруженные настройки с API handler');
+        const syncSuccess = await syncWithAPIHandler(mergedSettings);
         
-        console.log('Настройки загружены:', mergedSettings);
+        if (syncSuccess) {
+          console.log('SettingsContext: настройки загружены и успешно синхронизированы с API handler');
+        } else {
+          console.warn('SettingsContext: настройки загружены, но синхронизация с API handler не удалась');
+        }
       } else {
+        console.log('SettingsContext: настройки не найдены, используем дефолтные');
         setSettings(defaultSettings);
         applyInterfaceSettings(defaultSettings);
         
@@ -149,6 +165,7 @@ export const SettingsProvider = ({ children }) => {
         try {
           await window.electronAPI.updateSettings(defaultSettings);
           await syncWithAPIHandler(defaultSettings);
+          console.log('SettingsContext: дефолтные настройки сохранены и синхронизированы');
         } catch (saveError) {
           console.error('Ошибка сохранения дефолтных настроек:', saveError);
         }
@@ -163,7 +180,7 @@ export const SettingsProvider = ({ children }) => {
     }
   }, [waitForElectronAPI, applyInterfaceSettings, syncWithAPIHandler]);
 
-  // Сохранение настроек
+  // Сохранение настроек с принудительной синхронизацией
   const updateSettings = useCallback(async (newSettings) => {
     // Предотвращаем множественные одновременные вызовы
     if (saveInProgress) {
@@ -182,7 +199,8 @@ export const SettingsProvider = ({ children }) => {
       // Объединяем с текущими настройками
       const mergedSettings = { ...settings, ...newSettings };
       
-      console.log('Сохраняем настройки:', mergedSettings);
+      console.log('SettingsContext: сохраняем обновленные настройки:', mergedSettings);
+      console.log('SettingsContext: ВНИМАНИЕ - модель в настройках:', mergedSettings.model);
       
       // Сохраняем через electron API
       const result = await window.electronAPI.updateSettings(mergedSettings);
@@ -194,10 +212,16 @@ export const SettingsProvider = ({ children }) => {
         // Применяем настройки интерфейса немедленно
         applyInterfaceSettings(mergedSettings);
         
-        // Синхронизируем с API handler
-        await syncWithAPIHandler(mergedSettings);
+        // КРИТИЧЕСКИ ВАЖНО: Принудительно синхронизируем с API handler
+        console.log('SettingsContext: ПРИНУДИТЕЛЬНО синхронизируем сохраненные настройки с API handler');
+        const syncSuccess = await syncWithAPIHandler(mergedSettings);
         
-        console.log('Настройки успешно сохранены и применены');
+        if (syncSuccess) {
+          console.log('SettingsContext: настройки успешно сохранены и синхронизированы с API handler');
+        } else {
+          console.warn('SettingsContext: настройки сохранены, но синхронизация с API handler не удалась');
+        }
+        
         return true;
       } else {
         throw new Error(result?.error || 'Ошибка сохранения настроек');
@@ -220,11 +244,15 @@ export const SettingsProvider = ({ children }) => {
         throw new Error('API не готов');
       }
       
+      console.log(`SettingsContext: обновляем одну настройку ${key}:`, value);
+      
       const result = await window.electronAPI.updateSetting(key, value);
       
       if (result && result.success) {
         setSettings(prev => {
           const updated = { ...prev, [key]: value };
+          
+          console.log(`SettingsContext: настройка ${key} обновлена в локальном состоянии`);
           
           // Если изменили настройки интерфейса, применяем их
           if (['theme', 'fontSize', 'compactMode'].includes(key)) {
@@ -232,7 +260,13 @@ export const SettingsProvider = ({ children }) => {
           }
           
           // Синхронизируем с API handler
-          syncWithAPIHandler(updated);
+          syncWithAPIHandler(updated).then(syncSuccess => {
+            if (syncSuccess) {
+              console.log(`SettingsContext: настройка ${key} синхронизирована с API handler`);
+            } else {
+              console.warn(`SettingsContext: не удалось синхронизировать настройку ${key} с API handler`);
+            }
+          });
           
           return updated;
         });
@@ -257,13 +291,23 @@ export const SettingsProvider = ({ children }) => {
         throw new Error('API не готов');
       }
       
+      console.log('SettingsContext: сбрасываем настройки к дефолтным значениям');
+      
       const result = await window.electronAPI.resetSettings();
       
       if (result && result.success) {
         setSettings(defaultSettings);
         applyInterfaceSettings(defaultSettings);
-        await syncWithAPIHandler(defaultSettings);
-        console.log('Настройки сброшены');
+        
+        // КРИТИЧЕСКИ ВАЖНО: Синхронизируем дефолтные настройки с API handler
+        const syncSuccess = await syncWithAPIHandler(defaultSettings);
+        
+        if (syncSuccess) {
+          console.log('SettingsContext: настройки сброшены и синхронизированы с API handler');
+        } else {
+          console.warn('SettingsContext: настройки сброшены, но синхронизация с API handler не удалась');
+        }
+        
         return true;
       } else {
         throw new Error('Ошибка сброса настроек');

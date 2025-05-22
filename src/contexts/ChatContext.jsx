@@ -350,11 +350,17 @@ export const ChatProvider = ({ children }) => {
         dispatch({ type: ActionTypes.SET_ERROR, payload: 'API не доступен' });
         return null;
       }
+
+      console.log('sendMessage вызван с параметрами:', {
+        contentLength: content?.length || 0,
+        filesCount: files?.length || 0,
+        projectFilesCount: projectFiles?.length || 0
+      });
       
-      // Шаг 1: Загрузка файлов, если они есть
-      let attachments = [];
+      // Шаг 1: Загрузка файлов сообщения, если они есть
+      let messageAttachments = [];
       if (files.length > 0) {
-        attachments = await Promise.all(
+        messageAttachments = await Promise.all(
           files.map(async (file) => {
             try {
               // Если файл уже имеет путь, используем его
@@ -365,6 +371,7 @@ export const ChatProvider = ({ children }) => {
                   path: file.path,
                   type: file.type,
                   size: file.size,
+                  isProjectFile: false // Это файл сообщения
                 };
               }
               
@@ -382,6 +389,7 @@ export const ChatProvider = ({ children }) => {
                       path: result.path,
                       type: file.type,
                       size: file.size,
+                      isProjectFile: false // Это файл сообщения
                     };
                   } else {
                     throw new Error(result?.error || 'Ошибка загрузки файла');
@@ -400,18 +408,18 @@ export const ChatProvider = ({ children }) => {
           })
         );
         
-        // Фильтруем null значения (файлы с ошибками)
-        attachments = attachments.filter(a => a !== null);
+        // Фильтруем null значения
+        messageAttachments = messageAttachments.filter(a => a !== null);
       }
       
-      // Шаг 2: Создаем объект сообщения пользователя
+      // Шаг 2: Создаем объект сообщения пользователя (БЕЗ файлов проекта в attachments)
       const userMessage = {
         id: uuidv4(),
         chatId: state.activeChat.id,
         content,
         role: 'user',
         timestamp: new Date().toISOString(),
-        attachments
+        attachments: messageAttachments // Только файлы сообщения
       };
       
       // Шаг 3: Сохраняем сообщение пользователя в базе данных
@@ -424,28 +432,30 @@ export const ChatProvider = ({ children }) => {
       // Добавляем сообщение в состояние
       dispatch({ type: ActionTypes.ADD_MESSAGE, payload: userMessage });
       
-      // Шаг 4: Подготавливаем контекст (объединяем файлы сообщения и файлы проекта)
-      const allAttachments = [...attachments];
+      // Шаг 4: Подготавливаем ВСЕ файлы для отправки в Claude API
+      const allAttachmentsForAPI = [...messageAttachments];
       
-      // Добавляем файлы проекта как контекст
+      // Добавляем файлы проекта как контекст с специальной пометкой
       if (projectFiles && projectFiles.length > 0) {
-        console.log('Добавляем файлы проекта в контекст:', projectFiles.length);
+        console.log('Добавляем файлы проекта в контекст для API:', projectFiles.length);
         projectFiles.forEach(projectFile => {
-          allAttachments.push({
+          allAttachmentsForAPI.push({
             id: projectFile.id,
-            name: `[КОНТЕКСТ] ${projectFile.name}`,
+            name: projectFile.name,
             path: projectFile.path,
             type: projectFile.type,
             size: projectFile.size,
-            isProjectFile: true
+            isProjectFile: true // ВАЖНО: Помечаем как файл проекта
           });
         });
+        
+        console.log('Всего файлов для API (сообщение + проект):', allAttachmentsForAPI.length);
       }
       
-      // Шаг 5: Отправляем сообщение в Claude API
+      // Шаг 5: Отправляем сообщение в Claude API со ВСЕМИ файлами
       const claudeResponse = await window.electronAPI.sendToClaudeAI(
         content,
-        allAttachments, // Включаем файлы сообщения и проекта
+        allAttachmentsForAPI, // Файлы сообщения + файлы проекта с пометками
         state.messages // История сообщений
       );
       
@@ -471,10 +481,12 @@ export const ChatProvider = ({ children }) => {
       // Добавляем ответное сообщение в состояние
       dispatch({ type: ActionTypes.ADD_MESSAGE, payload: assistantMessage });
       
-      // Шаг 7: Обновляем метаданные чата (дата последнего обновления)
+      // Шаг 7: Обновляем метаданные чата
       await updateChat(state.activeChat.id, {
         updated_at: new Date().toISOString()
       });
+      
+      console.log('Сообщение успешно отправлено с файлами проекта:', projectFiles.length);
       
       return { userMessage, assistantMessage };
     } catch (error) {

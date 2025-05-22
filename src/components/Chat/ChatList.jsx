@@ -34,40 +34,38 @@ const ChatList = ({ chats, currentChatId }) => {
   const [selectedChat, setSelectedChat] = useState(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [chatToDelete, setChatToDelete] = useState(null); // НОВОЕ: отдельное состояние для чата к удалению
   const [newTitle, setNewTitle] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const handleMenuClick = (event, chat) => {
-    // Останавливаем всплытие события, чтобы не вызвать клик по чату
-    if (event && typeof event.stopPropagation === 'function') {
-      event.stopPropagation();
-    }
-    if (event && typeof event.preventDefault === 'function') {
-      event.preventDefault();
-    }
+    // КРИТИЧНО: Останавливаем всплытие события
+    event.stopPropagation();
+    event.preventDefault();
     
-    console.log('Opening menu for chat:', chat);
+    console.log('Opening menu for chat:', chat.id);
     setSelectedChat(chat);
     setAnchorEl(event.currentTarget);
   };
 
   const handleMenuClose = () => {
     setAnchorEl(null);
-    setSelectedChat(null);
+    // НЕ очищаем selectedChat здесь, чтобы диалоги работали корректно
   };
 
   const handleChatClick = (chatId) => {
-    // Закрываем меню если оно открыто
+    // Проверяем, не открыто ли меню
     if (anchorEl) {
-      handleMenuClose();
-      return;
+      return; // Игнорируем клик если меню открыто
     }
+    
     console.log('Navigating to chat:', chatId);
     navigate(`/chat/${chatId}`);
   };
 
   const handleEdit = () => {
     if (selectedChat) {
-      console.log('Editing chat:', selectedChat);
+      console.log('Editing chat:', selectedChat.id);
       setNewTitle(selectedChat.title);
       setEditDialogOpen(true);
     }
@@ -75,8 +73,11 @@ const ChatList = ({ chats, currentChatId }) => {
   };
 
   const handleDelete = () => {
-    console.log('Delete action for chat:', selectedChat);
-    setDeleteDialogOpen(true);
+    if (selectedChat) {
+      console.log('Delete action for chat:', selectedChat.id);
+      setChatToDelete(selectedChat); // ИСПРАВЛЕНО: сохраняем чат для удаления в отдельном состоянии
+      setDeleteDialogOpen(true);
+    }
     handleMenuClose();
   };
 
@@ -91,27 +92,54 @@ const ChatList = ({ chats, currentChatId }) => {
       }
     }
     setEditDialogOpen(false);
-    setSelectedChat(null);
+    setSelectedChat(null); // Очищаем только после завершения операции
     setNewTitle('');
   };
 
   const handleDeleteConfirm = async () => {
-    if (selectedChat) {
-      console.log('Confirming delete for chat:', selectedChat.id);
-      try {
-        const success = await deleteChat(selectedChat.id);
-        console.log('Delete result:', success);
-        
-        if (success && currentChatId === selectedChat.id) {
-          // Если удаляем текущий активный чат, переходим к новому чату
+    if (!chatToDelete) { // ИСПРАВЛЕНО: используем chatToDelete вместо selectedChat
+      console.error('No chat selected for deletion');
+      return;
+    }
+
+    setIsDeleting(true);
+    console.log('Confirming delete for chat:', chatToDelete.id);
+    
+    try {
+      const success = await deleteChat(chatToDelete.id);
+      console.log('Delete result:', success);
+      
+      if (success) {
+        // Если удаляем текущий активный чат, переходим к новому чату
+        if (currentChatId === chatToDelete.id) {
+          console.log('Deleted current active chat, navigating to new chat');
           navigate('/chat/new');
         }
-      } catch (error) {
-        console.error('Error deleting chat:', error);
+        
+        console.log('Chat deleted successfully');
+      } else {
+        console.error('Failed to delete chat');
       }
+    } catch (error) {
+      console.error('Error deleting chat:', error);
+    } finally {
+      setIsDeleting(false);
+      setDeleteDialogOpen(false);
+      setChatToDelete(null); // ИСПРАВЛЕНО: очищаем chatToDelete
+      setSelectedChat(null); // Очищаем selectedChat
     }
+  };
+
+  const handleDeleteCancel = () => {
     setDeleteDialogOpen(false);
+    setChatToDelete(null); // ИСПРАВЛЕНО: очищаем chatToDelete при отмене
     setSelectedChat(null);
+  };
+
+  const handleEditCancel = () => {
+    setEditDialogOpen(false);
+    setSelectedChat(null);
+    setNewTitle('');
   };
 
   const formatDate = (dateString) => {
@@ -167,6 +195,7 @@ const ChatList = ({ chats, currentChatId }) => {
                   borderRadius: 1,
                   mx: 1,
                   mb: 0.5,
+                  position: 'relative',
                   '&.Mui-selected': {
                     backgroundColor: 'primary.main',
                     color: 'primary.contrastText',
@@ -184,27 +213,40 @@ const ChatList = ({ chats, currentChatId }) => {
                   secondary={date}
                   primaryTypographyProps={{
                     noWrap: true,
-                    sx: { fontSize: '0.9rem' }
+                    sx: { fontSize: '0.9rem', pr: 5 }
                   }}
                   secondaryTypographyProps={{
                     noWrap: true,
                     sx: { fontSize: '0.75rem' }
                   }}
                 />
-                <ListItemSecondaryAction>
+                
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    right: 8,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    zIndex: 10
+                  }}
+                >
                   <Tooltip title="Действия">
                     <IconButton
                       size="small"
-                      onClick={(e) => {
-                        console.log('Menu button clicked for chat:', chat.id);
-                        handleMenuClick(e, chat);
+                      onClick={(e) => handleMenuClick(e, chat)}
+                      sx={{ 
+                        opacity: 0.7, 
+                        '&:hover': { 
+                          opacity: 1,
+                          bgcolor: 'rgba(255,255,255,0.2)'
+                        },
+                        bgcolor: 'rgba(255,255,255,0.1)'
                       }}
-                      sx={{ opacity: 0.7, '&:hover': { opacity: 1 } }}
                     >
                       <MoreVertIcon fontSize="small" />
                     </IconButton>
                   </Tooltip>
-                </ListItemSecondaryAction>
+                </Box>
               </ListItemButton>
             </ListItem>
           );
@@ -217,12 +259,7 @@ const ChatList = ({ chats, currentChatId }) => {
         onClose={handleMenuClose}
         transformOrigin={{ horizontal: 'right', vertical: 'top' }}
         anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-        onClick={(e) => {
-          // Предотвращаем закрытие меню при клике внутри него
-          if (e && typeof e.stopPropagation === 'function') {
-            e.stopPropagation();
-          }
-        }}
+        onClick={(e) => e.stopPropagation()}
       >
         <MenuItem onClick={handleEdit}>
           <ListItemIcon>
@@ -238,9 +275,10 @@ const ChatList = ({ chats, currentChatId }) => {
         </MenuItem>
       </Menu>
 
+      {/* Диалог редактирования */}
       <Dialog 
         open={editDialogOpen} 
-        onClose={() => setEditDialogOpen(false)}
+        onClose={handleEditCancel}
         maxWidth="sm"
         fullWidth
       >
@@ -259,7 +297,7 @@ const ChatList = ({ chats, currentChatId }) => {
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setEditDialogOpen(false)}>Отмена</Button>
+          <Button onClick={handleEditCancel}>Отмена</Button>
           <Button 
             onClick={handleEditSave} 
             variant="contained"
@@ -270,27 +308,34 @@ const ChatList = ({ chats, currentChatId }) => {
         </DialogActions>
       </Dialog>
 
+      {/* Диалог удаления */}
       <Dialog 
         open={deleteDialogOpen} 
-        onClose={() => setDeleteDialogOpen(false)}
+        onClose={!isDeleting ? handleDeleteCancel : undefined}
         maxWidth="sm"
         fullWidth
       >
         <DialogTitle>Удалить чат?</DialogTitle>
         <DialogContent>
           <Typography>
-            Вы уверены, что хотите удалить чат "{selectedChat?.title || 'Новый чат'}"? 
+            Вы уверены, что хотите удалить чат "{chatToDelete?.title || 'Новый чат'}"? 
             Это действие нельзя отменить.
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)}>Отмена</Button>
+          <Button 
+            onClick={handleDeleteCancel}
+            disabled={isDeleting}
+          >
+            Отмена
+          </Button>
           <Button 
             onClick={handleDeleteConfirm} 
             color="error" 
             variant="contained"
+            disabled={isDeleting}
           >
-            Удалить
+            {isDeleting ? 'Удаление...' : 'Удалить'}
           </Button>
         </DialogActions>
       </Dialog>

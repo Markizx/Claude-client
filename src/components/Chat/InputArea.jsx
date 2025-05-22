@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   Box,
   TextField,
@@ -38,23 +38,91 @@ const InputArea = ({
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [error, setError] = useState('');
+  const [projectFiles, setProjectFiles] = useState([]); // ДОБАВЛЕНО: локальное состояние для файлов проекта
   const fileInputRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const recordingIntervalRef = useRef(null);
-  const { getFilesByProjectId } = useProject();
 
-  // Получаем файлы выбранного проекта
+  // ОТЛАДКА: следим за изменениями проекта
+  useEffect(() => {
+    if (selectedProjectId) {
+      console.log('=== ОТЛАДКА ПРОЕКТА ===');
+      console.log('Выбранный проект ID:', selectedProjectId);
+      
+      const selectedProject = projects?.find(p => p.id === selectedProjectId);
+      console.log('Найденный проект:', selectedProject);
+      
+      if (selectedProject) {
+        console.log('Файлы проекта в объекте:', selectedProject.files);
+        
+        // Получаем файлы проекта
+        getProjectFiles(selectedProjectId).then(files => {
+          console.log('Файлы через getProjectFiles:', files);
+          setProjectFiles(files); // ИСПРАВЛЕНО: сохраняем в локальном состоянии
+        });
+      } else {
+        setProjectFiles([]); // Очищаем если проект не найден
+      }
+    } else {
+      setProjectFiles([]); // Очищаем если проект не выбран
+    }
+  }, [selectedProjectId, projects]);
+
+  // Получаем файлы выбранного проекта - ИСПРАВЛЕННАЯ ВЕРСИЯ
   const getProjectFiles = useCallback(async (projectId) => {
-    if (!projectId || !window.electronAPI) return [];
+    if (!projectId) {
+      console.log('getProjectFiles: нет projectId');
+      return [];
+    }
     
     try {
-      const projectFiles = await window.electronAPI.getProjectFiles(projectId);
-      return projectFiles || [];
+      console.log('getProjectFiles: получаем файлы для проекта', projectId);
+      
+      // ИСПРАВЛЕНО: используем projects из пропсов для быстрого доступа
+      const selectedProject = projects?.find(p => p.id === projectId);
+      if (selectedProject && selectedProject.files && selectedProject.files.length > 0) {
+        console.log('getProjectFiles: используем файлы из props:', selectedProject.files);
+        
+        const formattedFiles = selectedProject.files.map(file => ({
+          id: file.id,
+          name: file.name,
+          path: file.path,
+          type: file.type,
+          size: file.size,
+          isProjectFile: true
+        }));
+        
+        return formattedFiles;
+      }
+      
+      // Если файлов нет в props, пытаемся получить через API
+      if (window.electronAPI) {
+        console.log('getProjectFiles: получаем через API');
+        const projectFiles = await window.electronAPI.getProjectFiles(projectId);
+        console.log('getProjectFiles: получено через API:', projectFiles?.length || 0);
+        
+        if (projectFiles && projectFiles.length > 0) {
+          const formattedFiles = projectFiles.map(file => ({
+            id: file.id,
+            name: file.name,
+            path: file.path,
+            type: file.type,
+            size: file.size,
+            isProjectFile: true
+          }));
+          
+          console.log('getProjectFiles: отформатированные файлы:', formattedFiles);
+          return formattedFiles;
+        }
+      }
+      
+      console.log('getProjectFiles: файлы не найдены');
+      return [];
     } catch (error) {
       console.error('Ошибка получения файлов проекта:', error);
       return [];
     }
-  }, []);
+  }, [projects]);
 
   // Обработка drag and drop
   const onDrop = useCallback((acceptedFiles, rejectedFiles) => {
@@ -63,23 +131,20 @@ const InputArea = ({
       setTimeout(() => setError(''), 5000);
     }
 
-    // Обрабатываем принятые файлы
     if (acceptedFiles && acceptedFiles.length > 0) {
       acceptedFiles.forEach(file => {
-        // Проверяем размер файла
         if (file.size > 50 * 1024 * 1024) {
           setError(`Файл ${file.name} слишком большой (максимум 50MB)`);
           setTimeout(() => setError(''), 5000);
           return;
         }
 
-        // Добавляем файл в состояние
         const fileObj = {
           id: Date.now() + Math.random(),
           name: file.name,
           size: file.size,
           type: file.type || 'application/octet-stream',
-          file: file // Сохраняем файл для последующей отправки
+          file: file
         };
 
         console.log('Файл загружен:', fileObj);
@@ -90,15 +155,14 @@ const InputArea = ({
 
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop,
-    maxSize: 50 * 1024 * 1024, // 50MB
+    maxSize: 50 * 1024 * 1024,
     multiple: true,
     noClick: true,
     noKeyboard: true
   });
 
-  // Обработка отправки формы
+  // Обработка отправки формы - ИСПРАВЛЕННАЯ ВЕРСИЯ
   const handleSubmit = async (event) => {
-    // Проверяем, является ли event объектом события и имеет ли он метод preventDefault
     if (event && typeof event.preventDefault === 'function') {
       event.preventDefault();
     }
@@ -110,18 +174,25 @@ const InputArea = ({
     try {
       setError('');
       
-      // Получаем файлы проекта, если проект выбран
-      let projectFiles = [];
-      if (selectedProjectId) {
-        projectFiles = await getProjectFiles(selectedProjectId);
-        console.log('Файлы проекта для контекста:', projectFiles);
+      console.log('=== ОТЛАДКА ОТПРАВКИ ===');
+      console.log('selectedProjectId:', selectedProjectId);
+      console.log('projectFiles в состоянии:', projectFiles);
+      console.log('projects:', projects);
+
+      // ИСПРАВЛЕНО: используем файлы из локального состояния
+      let currentProjectFiles = projectFiles;
+      
+      // Если файлов нет в состоянии, пытаемся получить еще раз
+      if (selectedProjectId && (!currentProjectFiles || currentProjectFiles.length === 0)) {
+        console.log('handleSubmit: получаем файлы проекта повторно');
+        currentProjectFiles = await getProjectFiles(selectedProjectId);
+        console.log('handleSubmit: получено файлов проекта:', currentProjectFiles.length);
       }
 
-      // Подготавливаем файлы для отправки
+      // Подготавливаем файлы сообщения для отправки
       const filesToSend = await Promise.all(
         files.map(async (fileData) => {
           try {
-            // Если файл уже имеет путь, просто используем его
             if (fileData.path) {
               return {
                 name: fileData.name,
@@ -131,7 +202,6 @@ const InputArea = ({
               };
             }
             
-            // Иначе загружаем файл на сервер
             if (fileData.file && window.electronAPI) {
               console.log('Загрузка файла через Electron API:', fileData.name);
               
@@ -163,18 +233,22 @@ const InputArea = ({
         })
       );
 
-      // Фильтруем null значения (файлы с ошибками)
       const validFiles = filesToSend.filter(file => file !== null);
 
-      // Отправляем сообщение с файлами и контекстом проекта
-      await onSendMessage(message, validFiles, projectFiles);
+      console.log('handleSubmit: отправляем сообщение с файлами:', {
+        messageFiles: validFiles.length,
+        projectFiles: currentProjectFiles.length,
+        projectFileNames: currentProjectFiles.map(f => f.name)
+      });
+
+      // ИСПРАВЛЕНО: передаем currentProjectFiles
+      await onSendMessage(message, validFiles, currentProjectFiles);
       
       // Очищаем форму после успешной отправки
       setMessage('');
       setFiles([]);
       setError('');
       
-      // Освобождаем URL превью
       files.forEach(file => {
         if (file.preview && file.preview.startsWith('blob:')) {
           URL.revokeObjectURL(file.preview);
@@ -197,7 +271,7 @@ const InputArea = ({
   // Обработка изменения текста
   const handleMessageChange = (e) => {
     setMessage(e.target.value);
-    setError(''); // Очищаем ошибку при вводе
+    setError('');
   };
 
   // Обработка выбора файлов через диалог
@@ -236,7 +310,6 @@ const InputArea = ({
       const newFiles = [...prev];
       const removedFile = newFiles[index];
       
-      // Освобождаем URL если он был создан
       if (removedFile.preview && removedFile.preview.startsWith('blob:')) {
         URL.revokeObjectURL(removedFile.preview);
       }
@@ -260,7 +333,6 @@ const InputArea = ({
     }
     
     if (!isRecording) {
-      // Начинаем запись
       try {
         navigator.mediaDevices.getUserMedia({ audio: true })
           .then(stream => {
@@ -271,7 +343,6 @@ const InputArea = ({
             mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
             mediaRecorder.onstop = () => {
               const blob = new Blob(chunks, { type: 'audio/wav' });
-              // Здесь можно добавить обработку аудио
               console.log('Audio recorded:', blob);
             };
             
@@ -292,7 +363,6 @@ const InputArea = ({
         setTimeout(() => setError(''), 5000);
       }
     } else {
-      // Останавливаем запись
       if (mediaRecorderRef.current) {
         mediaRecorderRef.current.stop();
         mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
@@ -380,7 +450,16 @@ const InputArea = ({
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <FolderIcon fontSize="small" />
                   {project.title || project.name}
-                  {project.files && project.files.length > 0 && (
+                  {/* ИСПРАВЛЕНО: показываем количество файлов из состояния */}
+                  {selectedProjectId === project.id && projectFiles.length > 0 && (
+                    <Chip 
+                      label={`${projectFiles.length} файлов`}
+                      size="small"
+                      variant="outlined"
+                      color="primary"
+                    />
+                  )}
+                  {selectedProjectId !== project.id && project.files && project.files.length > 0 && (
                     <Chip 
                       label={`${project.files.length} файлов`}
                       size="small"
@@ -392,6 +471,44 @@ const InputArea = ({
             ))}
           </Select>
         </FormControl>
+      )}
+
+      {/* ДОБАВЛЕНО: Отображение файлов проекта */}
+      {projectFiles.length > 0 && (
+        <Paper
+          variant="outlined"
+          sx={{
+            p: 2,
+            mb: 2,
+            borderRadius: 2,
+            bgcolor: 'background.paper',
+            border: '2px solid',
+            borderColor: 'success.main',
+          }}
+        >
+          <Typography variant="body2" color="success.main" sx={{ mb: 1, fontWeight: 'bold' }}>
+            📁 Файлы проекта будут переданы как контекст ({projectFiles.length}):
+          </Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+            {projectFiles.map((file, index) => (
+              <Chip
+                key={file.id || index}
+                label={
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <span>{file.name}</span>
+                    <Typography variant="caption" color="text.secondary">
+                      ({Math.round(file.size / 1024)}KB)
+                    </Typography>
+                  </Box>
+                }
+                variant="outlined"
+                color="success"
+                size="small"
+                sx={{ maxWidth: 250 }}
+              />
+            ))}
+          </Box>
+        </Paper>
       )}
 
       {/* Отображение выбранных файлов */}
@@ -406,7 +523,7 @@ const InputArea = ({
           }}
         >
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            Прикрепленные файлы ({files.length}):
+            📎 Прикрепленные файлы ({files.length}):
           </Typography>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
             {files.map((file, index) => (
@@ -545,11 +662,11 @@ const InputArea = ({
         <Typography variant="caption" color="text.secondary">
           Enter - отправить, Shift+Enter - новая строка
         </Typography>
-        {projects && projects.length > 0 && selectedProjectId && (
+        {projectFiles.length > 0 && (
           <>
             <span>•</span>
-            <Typography variant="caption" color="text.secondary">
-              Файлы проекта будут переданы как контекст
+            <Typography variant="caption" color="success.main" sx={{ fontWeight: 'bold' }}>
+              📁 {projectFiles.length} файлов проекта будут переданы как контекст
             </Typography>
           </>
         )}

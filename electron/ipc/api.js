@@ -17,17 +17,12 @@ class ClaudeAPIHandler {
   constructor() {
     this.baseUrl = 'https://api.anthropic.com';
     this.apiVersion = '2023-06-01';
-    this.defaultModel = 'claude-3-7-sonnet-20250219';
+    // УБИРАЕМ принудительную установку дефолтной модели
     
-    // Кешируем настройки для быстрого доступа
-    this.cachedSettings = {
-      model: 'claude-3-7-sonnet-20250219',
-      maxTokens: 4096,
-      temperature: 0.7,
-      topP: 1.0
-    };
+    // Инициализируем пустой кеш настроек
+    this.cachedSettings = {};
     
-    console.log('ClaudeAPIHandler инициализирован с дефолтными настройками');
+    console.log('ClaudeAPIHandler инициализирован БЕЗ принудительных дефолтных настроек');
   }
 
   // Get API key
@@ -36,7 +31,6 @@ class ClaudeAPIHandler {
     if (!encryptedKey) return '';
     
     try {
-      // Простая версия - без шифрования для отладки
       return encryptedKey;
     } catch (error) {
       console.error('Error decrypting API key:', error);
@@ -47,7 +41,6 @@ class ClaudeAPIHandler {
   // Set API key
   async setApiKey(apiKey) {
     try {
-      // Простая версия - без шифрования для отладки
       store.set('claudeApiKey', apiKey);
       return { success: true };
     } catch (error) {
@@ -63,11 +56,10 @@ class ClaudeAPIHandler {
     }
     
     try {
-      // Simple check request to Claude API
       const response = await axios.post(
         `${this.baseUrl}/v1/messages`,
         {
-          model: 'claude-3-haiku-20240307',
+          model: 'claude-3-haiku-20240307', // Используем быструю модель для проверки
           max_tokens: 10,
           messages: [
             {
@@ -97,8 +89,6 @@ class ClaudeAPIHandler {
         return false;
       }
       
-      // Если ошибка не связана с аутентификацией, но сервер ответил,
-      // то ключ может быть действительным, но есть другие проблемы
       if (error.response) {
         console.error('API responded with error, but key might be valid:', error.response.status);
         return true;
@@ -109,39 +99,40 @@ class ClaudeAPIHandler {
     }
   }
 
-  // Получение настроек (БЕЗ принудительной перезаписи модели)
+  // Получение настроек с приоритетом кеша
   async getSettings() {
     try {
-      // Пытаемся получить настройки из storageManager
+      // Если есть кешированные настройки, используем их
+      if (this.cachedSettings && Object.keys(this.cachedSettings).length > 0) {
+        console.log('ClaudeAPIHandler: используем кешированные настройки:', this.cachedSettings);
+        return this.cachedSettings;
+      }
+      
+      // Иначе пытаемся получить из storageManager
       if (global.storageManager) {
         const settings = global.storageManager.getAllSettings();
         if (settings && Object.keys(settings).length > 0) {
-          // Обновляем кеш, НЕ перезаписывая модель принудительно
-          this.cachedSettings = {
-            ...this.cachedSettings,
-            ...settings
-          };
-          console.log('ClaudeAPIHandler: настройки получены из storageManager:', this.cachedSettings);
+          this.cachedSettings = { ...settings };
+          console.log('ClaudeAPIHandler: настройки получены из storageManager и кешированы:', this.cachedSettings);
           return this.cachedSettings;
         }
       }
       
-      // Fallback на кешированные настройки
-      console.log('ClaudeAPIHandler: используем кешированные настройки:', this.cachedSettings);
-      return this.cachedSettings;
+      // Если ничего нет, возвращаем пустой объект
+      console.log('ClaudeAPIHandler: настройки не найдены, возвращаем пустой объект');
+      return {};
     } catch (error) {
       console.error('Error getting settings for API:', error);
-      // Возвращаем кешированные настройки в случае ошибки
-      return this.cachedSettings;
+      return {};
     }
   }
 
-  // Обновление кешированных настроек (НОВЫЙ МЕТОД)
+  // Обновление кешированных настроек
   updateCachedSettings(newSettings) {
     if (newSettings && typeof newSettings === 'object') {
-      // Обновляем только переданные настройки, не затирая остальные
-      this.cachedSettings = { ...this.cachedSettings, ...newSettings };
-      console.log('ClaudeAPIHandler: обновлены кешированные настройки:', this.cachedSettings);
+      // Полностью заменяем кеш новыми настройками
+      this.cachedSettings = { ...newSettings };
+      console.log('ClaudeAPIHandler: кеш настроек полностью обновлен:', this.cachedSettings);
       return true;
     } else {
       console.error('ClaudeAPIHandler: неверный формат настроек для обновления:', newSettings);
@@ -157,25 +148,57 @@ class ClaudeAPIHandler {
       throw new Error('Claude API key is not configured. Please update your settings.');
     }
 
+    console.log('sendMessageToClaudeAI вызван с параметрами:', {
+      contentLength: content?.length || 0,
+      attachmentsCount: attachments?.length || 0,
+      historyLength: history?.length || 0
+    });
+
     // Prepare message content array
     const messageContent = [];
     
-    // Add attachments to the message
+    // ИСПРАВЛЕНО: Разделяем файлы сообщения и файлы проекта
+    const messageFiles = [];
+    const projectFiles = [];
+    
     if (attachments && attachments.length > 0) {
-      for (const attachment of attachments) {
+      attachments.forEach(attachment => {
+        if (attachment.isProjectFile) {
+          projectFiles.push(attachment);
+        } else {
+          messageFiles.push(attachment);
+        }
+      });
+    }
+    
+    console.log('Разделили файлы:', {
+      messageFilesCount: messageFiles.length,
+      projectFilesCount: projectFiles.length
+    });
+    
+    // Добавляем КОНТЕКСТ ПРОЕКТА В НАЧАЛО, если есть файлы проекта
+    if (projectFiles.length > 0) {
+      messageContent.push({
+        type: 'text',
+        text: '=== КОНТЕКСТ ПРОЕКТА ==='
+      });
+      
+      for (const projectFile of projectFiles) {
         try {
-          // Read the file
-          if (!attachment.path || !fs.existsSync(attachment.path)) {
-            console.warn(`File not found: ${attachment.path}`);
+          if (!projectFile.path || !fs.existsSync(projectFile.path)) {
+            console.warn(`Project file not found: ${projectFile.path}`);
+            messageContent.push({
+              type: 'text',
+              text: `[ФАЙЛ ПРОЕКТА НЕДОСТУПЕН: ${projectFile.name}]`
+            });
             continue;
           }
           
-          const fileBuffer = fs.readFileSync(attachment.path);
+          const fileBuffer = fs.readFileSync(projectFile.path);
+          const mediaType = this.getMediaType(projectFile.type, projectFile.name);
           
-          // Determine file type
-          const mediaType = this.getMediaType(attachment.type, attachment.name);
+          console.log(`Обрабатываем файл проекта: ${projectFile.name} (${mediaType})`);
           
-          // Проверяем, является ли файл изображением
           if (this.isImageFile(mediaType)) {
             // Для изображений используем тип image
             messageContent.push({
@@ -186,40 +209,92 @@ class ClaudeAPIHandler {
                 data: fileBuffer.toString('base64')
               }
             });
-            console.log(`Added image to request: ${attachment.name} (${mediaType})`);
+            console.log(`Added project image: ${projectFile.name}`);
           } else {
-            // Для текстовых документов - преобразуем в текст и добавляем как text
+            // Для текстовых документов - преобразуем в текст
             try {
-              // Попытка прочитать как текст
               const textContent = fileBuffer.toString('utf8');
-              
               messageContent.push({
                 type: 'text',
-                text: `### Содержимое файла ${attachment.name} ###\n\n${textContent}\n\n### Конец файла ${attachment.name} ###`
+                text: `### ФАЙЛ ПРОЕКТА: ${projectFile.name} ###\n\n${textContent}\n\n### КОНЕЦ ФАЙЛА: ${projectFile.name} ###`
               });
-              
-              console.log(`Added text document to request: ${attachment.name} (${mediaType})`);
+              console.log(`Added project text file: ${projectFile.name} (${textContent.length} chars)`);
             } catch (error) {
-              console.error(`Error converting file ${attachment.name} to text:`, error);
-              
-              // Для бинарных файлов добавляем только информацию о файле
+              console.error(`Error converting project file ${projectFile.name} to text:`, error);
               messageContent.push({
                 type: 'text',
-                text: `[Прикреплен бинарный файл: ${attachment.name}, тип: ${mediaType}, размер: ${fileBuffer.length} байт]`
+                text: `[ФАЙЛ ПРОЕКТА (бинарный): ${projectFile.name}, тип: ${mediaType}, размер: ${fileBuffer.length} байт]`
               });
             }
           }
         } catch (fileError) {
-          console.error(`Error processing file ${attachment.name}:`, fileError);
+          console.error(`Error processing project file ${projectFile.name}:`, fileError);
+          messageContent.push({
+            type: 'text',
+            text: `[ОШИБКА ОБРАБОТКИ ФАЙЛА ПРОЕКТА: ${projectFile.name}]`
+          });
+        }
+      }
+      
+      messageContent.push({
+        type: 'text',
+        text: '=== КОНЕЦ КОНТЕКСТА ПРОЕКТА ===\n\n'
+      });
+    }
+    
+    // Добавляем ОБЫЧНЫЕ ПРИКРЕПЛЕННЫЕ ФАЙЛЫ
+    if (messageFiles.length > 0) {
+      for (const attachment of messageFiles) {
+        try {
+          if (!attachment.path || !fs.existsSync(attachment.path)) {
+            console.warn(`Message file not found: ${attachment.path}`);
+            continue;
+          }
+          
+          const fileBuffer = fs.readFileSync(attachment.path);
+          const mediaType = this.getMediaType(attachment.type, attachment.name);
+          
+          console.log(`Обрабатываем прикрепленный файл: ${attachment.name} (${mediaType})`);
+          
+          if (this.isImageFile(mediaType)) {
+            messageContent.push({
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: mediaType,
+                data: fileBuffer.toString('base64')
+              }
+            });
+            console.log(`Added message image: ${attachment.name}`);
+          } else {
+            try {
+              const textContent = fileBuffer.toString('utf8');
+              messageContent.push({
+                type: 'text',
+                text: `### ПРИКРЕПЛЕННЫЙ ФАЙЛ: ${attachment.name} ###\n\n${textContent}\n\n### КОНЕЦ ФАЙЛА: ${attachment.name} ###`
+              });
+              console.log(`Added message text file: ${attachment.name} (${textContent.length} chars)`);
+            } catch (error) {
+              console.error(`Error converting message file ${attachment.name} to text:`, error);
+              messageContent.push({
+                type: 'text',
+                text: `[ПРИКРЕПЛЕННЫЙ ФАЙЛ (бинарный): ${attachment.name}, тип: ${mediaType}, размер: ${fileBuffer.length} байт]`
+              });
+            }
+          }
+        } catch (fileError) {
+          console.error(`Error processing message file ${attachment.name}:`, fileError);
         }
       }
     }
     
-    // Add text content
+    // Добавляем ОСНОВНОЙ ТЕКСТ СООБЩЕНИЯ
     messageContent.push({
       type: 'text',
       text: content || 'Привет!'
     });
+    
+    console.log(`Подготовлено содержимое сообщения с ${messageContent.length} элементами`);
     
     // Prepare conversation history in Claude's format
     const messages = [];
@@ -255,8 +330,17 @@ class ClaudeAPIHandler {
       content: messageContent
     });
     
-    // Системное сообщение
-    const systemPrompt = `Ты полезный ассистент Claude. Если пользователь прикрепил файлы, анализируй их содержимое и отвечай на основе этих данных. 
+    // Системное сообщение с улучшенными инструкциями
+    const systemPrompt = `Ты полезный ассистент Claude. 
+
+ВАЖНЫЕ ИНСТРУКЦИИ:
+1. Если в сообщении есть секция "=== КОНТЕКСТ ПРОЕКТА ===", то файлы в этой секции - это файлы проекта пользователя. Используй их как справочную информацию для понимания контекста работы.
+
+2. Если есть "ПРИКРЕПЛЕННЫЕ ФАЙЛЫ", то это файлы, которые пользователь специально прикрепил к текущему сообщению.
+
+3. Анализируй ВСЕ предоставленные файлы (и проекта, и прикрепленные) для формирования ответа.
+
+4. Если пользователь задает вопросы о коде или проекте, обязательно используй информацию из файлов проекта.
 
 Правила для артефактов:
 - Используй тег <artifact> для создания кода, документов и визуализаций
@@ -270,19 +354,21 @@ class ClaudeAPIHandler {
 
 Всегда отвечай на русском языке, если не попросят иначе.`;
     
-    // Получаем актуальные настройки (используем кешированные)
-    const settings = this.cachedSettings;
-    console.log('Используем кешированные настройки для API запроса:', settings);
+    // Получаем актуальные настройки
+    const settings = await this.getSettings();
+    console.log('Получены настройки для API запроса:', settings);
     
-    // Используем настройки БЕЗ принудительной перезаписи модели
-    const modelName = settings.model || this.defaultModel;
+    // Используем настройки БЕЗ принудительных значений по умолчанию
+    const modelName = settings.model || 'claude-3-7-sonnet-20250219';
     const maxTokens = settings.maxTokens || 4096;
     const temperature = settings.temperature || 0.7;
     const topP = settings.topP || 1.0;
     
+    console.log(`ВАЖНО: Используется модель из настроек: ${modelName}`);
+    
     // Make API request to Claude
     try {
-      console.log(`Sending request to Claude API with model: ${modelName}, maxTokens: ${maxTokens}, temperature: ${temperature}, topP: ${topP}`);
+      console.log(`Отправляем запрос к Claude API с моделью: ${modelName}, файлов проекта: ${projectFiles.length}, обычных файлов: ${messageFiles.length}`);
       
       const requestData = {
         model: modelName,
@@ -293,18 +379,14 @@ class ClaudeAPIHandler {
         top_p: topP
       };
       
-      console.log('Request data (without file content):', JSON.stringify({
-        ...requestData,
-        messages: requestData.messages.map(msg => ({
-          role: msg.role,
-          content: Array.isArray(msg.content) 
-            ? msg.content.map(c => ({ 
-                type: c.type, 
-                ...(c.type === 'text' ? { text: c.text.substring(0, 50) + '...' } : { source: { type: c.source?.type, media_type: c.source?.media_type } })
-              }))
-            : msg.content
-        }))
-      }, null, 2));
+      console.log('Request data summary:', {
+        model: requestData.model,
+        max_tokens: requestData.max_tokens,
+        temperature: requestData.temperature,
+        top_p: requestData.top_p,
+        messagesCount: requestData.messages.length,
+        currentMessageContentParts: messageContent.length
+      });
       
       const response = await axios.post(
         `${this.baseUrl}/v1/messages`,
@@ -315,19 +397,19 @@ class ClaudeAPIHandler {
             'anthropic-version': this.apiVersion,
             'Content-Type': 'application/json'
           },
-          timeout: 60000 // 60 seconds timeout
+          timeout: 60000
         }
       );
       
       // Extract and return Claude's response
       if (response.data && response.data.content && response.data.content.length > 0) {
-        // Combine all text elements from the response
         const textContent = response.data.content
           .filter(item => item.type === 'text')
           .map(item => item.text)
           .join('\n');
           
-        console.log('Получен ответ от Claude API, модель:', response.data.model);
+        console.log('УСПЕХ: Получен ответ от Claude API, фактическая модель:', response.data.model);
+        console.log('Файлы проекта были переданы в контексте:', projectFiles.length > 0);
         
         return {
           id: response.data.id,
@@ -346,7 +428,6 @@ class ClaudeAPIHandler {
         console.error('Response status:', error.response.status);
         console.error('Response data:', error.response.data);
         
-        // Более детальная информация об ошибке
         if (error.response.data && error.response.data.error) {
           throw new Error(`API Error: ${error.response.data.error.message || error.response.data.error.type}`);
         }
@@ -364,7 +445,6 @@ class ClaudeAPIHandler {
   getMediaType(mimeType, fileName) {
     if (mimeType && mimeType !== 'application/octet-stream') return mimeType;
     
-    // Fallback to extension-based detection
     const ext = path.extname(fileName || '').toLowerCase();
     
     const mimeTypes = {
@@ -453,12 +533,12 @@ function register(ipcMainInstance, storageManagerRef = null) {
     }
   });
 
-  // НОВЫЙ обработчик для обновления кешированных настроек в API handler
+  // Обработчик для обновления кешированных настроек в API handler
   ipcMainInstance.handle('api:updateSettings', async (_event, settings) => {
     try {
-      console.log('API handler получил обновление настроек:', settings);
+      console.log('API handler получил полное обновление настроек:', settings);
       const success = apiHandler.updateCachedSettings(settings);
-      console.log('API handler обновил настройки, результат:', success);
+      console.log('API handler обновил кеш настроек, результат:', success);
       return { success };
     } catch (error) {
       console.error('Error updating API settings cache:', error);

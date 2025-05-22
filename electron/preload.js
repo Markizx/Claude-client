@@ -115,10 +115,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('settings:update', settings).then(result => {
       console.log('preload: результат обновления настроек:', result);
       
-      // Дополнительно уведомляем API handler об изменениях
+      // КРИТИЧНО: Синхронизируем с API handler сразу после успешного сохранения
       if (result.success) {
-        ipcRenderer.invoke('api:updateSettings', settings).catch(error => {
+        return ipcRenderer.invoke('api:updateSettings', settings).then(apiResult => {
+          console.log('preload: результат синхронизации с API handler:', apiResult);
+          return result; // Возвращаем оригинальный результат
+        }).catch(error => {
           console.warn('preload: ошибка синхронизации с API handler:', error);
+          return result; // Возвращаем оригинальный результат даже при ошибке синхронизации
         });
       }
       
@@ -134,12 +138,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('settings:updateSingle', { key, value }).then(result => {
       console.log(`preload: результат обновления настройки ${key}:`, result);
       
-      // Дополнительно уведомляем API handler об изменениях
+      // КРИТИЧНО: Синхронизируем с API handler сразу после успешного сохранения
       if (result.success) {
-        const partialSettings = {};
-        partialSettings[key] = value;
-        ipcRenderer.invoke('api:updateSettings', partialSettings).catch(error => {
-          console.warn('preload: ошибка синхронизации настройки с API handler:', error);
+        // Получаем все настройки и отправляем в API handler
+        return ipcRenderer.invoke('settings:getAll').then(allSettings => {
+          return ipcRenderer.invoke('api:updateSettings', allSettings).then(apiResult => {
+            console.log('preload: результат синхронизации настройки с API handler:', apiResult);
+            return result; // Возвращаем оригинальный результат
+          }).catch(error => {
+            console.warn('preload: ошибка синхронизации настройки с API handler:', error);
+            return result; // Возвращаем оригинальный результат даже при ошибке синхронизации
+          });
+        }).catch(error => {
+          console.warn('preload: ошибка получения всех настроек для синхронизации:', error);
+          return result;
         });
       }
       
@@ -150,33 +162,40 @@ contextBridge.exposeInMainWorld('electronAPI', {
     });
   },
   
-  getSetting: (key, defaultValue) => {
-    console.log(`preload: получение настройки ${key}`);
-    return ipcRenderer.invoke('settings:getSingle', { key, defaultValue }).then(result => {
-      console.log(`preload: настройка ${key} =`, result);
-      return result;
-    }).catch(error => {
-      console.error(`preload: ошибка получения настройки ${key}:`, error);
-      return defaultValue;
-    });
-  },
-  
   resetSettings: () => {
     console.log('preload: сброс настроек');
     return ipcRenderer.invoke('settings:reset').then(result => {
       console.log('preload: результат сброса настроек:', result);
       
-      // Дополнительно уведомляем API handler об изменениях
+      // КРИТИЧНО: Синхронизируем с API handler сразу после успешного сброса
       if (result.success) {
         // Получаем дефолтные настройки и отправляем в API handler
         const defaultSettings = {
           model: 'claude-3-7-sonnet-20250219',
           maxTokens: 4096,
           temperature: 0.7,
-          topP: 1.0
+          topP: 1.0,
+          language: 'ru',
+          theme: 'dark',
+          autoSave: true,
+          confirmDelete: true,
+          messageAnimation: true,
+          compactMode: false,
+          showTimestamps: true,
+          fontSize: 14,
+          soundEnabled: true,
+          desktopNotifications: true,
+          autoBackup: false,
+          backupInterval: 24,
+          maxBackups: 10,
         };
-        ipcRenderer.invoke('api:updateSettings', defaultSettings).catch(error => {
+        
+        return ipcRenderer.invoke('api:updateSettings', defaultSettings).then(apiResult => {
+          console.log('preload: результат синхронизации сброшенных настроек с API handler:', apiResult);
+          return result; // Возвращаем оригинальный результат
+        }).catch(error => {
           console.warn('preload: ошибка синхронизации сброшенных настроек с API handler:', error);
+          return result; // Возвращаем оригинальный результат даже при ошибке синхронизации
         });
       }
       

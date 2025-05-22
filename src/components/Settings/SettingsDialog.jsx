@@ -72,6 +72,7 @@ const SettingsDialog = ({ open, onClose }) => {
   // Синхронизация с глобальными настройками при открытии диалога
   useEffect(() => {
     if (open && settings) {
+      console.log('SettingsDialog: синхронизируем локальные настройки с глобальными:', settings);
       setLocalSettings({ ...settings });
       setError(null);
       setSuccess(false);
@@ -94,12 +95,18 @@ const SettingsDialog = ({ open, onClose }) => {
   };
 
   const handleInputChange = (field, value) => {
+    console.log(`SettingsDialog: изменяем локальную настройку ${field}:`, value);
+    
     setLocalSettings(prev => {
       const newSettings = { ...prev, [field]: value };
       
       // Проверяем, есть ли изменения
       const changed = JSON.stringify(newSettings) !== JSON.stringify(settings);
       setHasChanges(changed);
+      
+      if (changed) {
+        console.log(`SettingsDialog: обнаружены изменения в настройках, модель: ${newSettings.model}`);
+      }
       
       return newSettings;
     });
@@ -114,6 +121,7 @@ const SettingsDialog = ({ open, onClose }) => {
   };
 
   const handleSelectChange = (field) => (event) => {
+    console.log(`SettingsDialog: изменяем select настройку ${field}:`, event.target.value);
     handleInputChange(field, event.target.value);
   };
 
@@ -131,7 +139,8 @@ const SettingsDialog = ({ open, onClose }) => {
         return;
       }
       
-      console.log('Сохраняем настройки из диалога:', localSettings);
+      console.log('SettingsDialog: сохраняем настройки:', localSettings);
+      console.log('SettingsDialog: КРИТИЧЕСКИ ВАЖНО - сохраняемая модель:', localSettings.model);
       
       const success = await updateSettings(localSettings);
       
@@ -139,6 +148,8 @@ const SettingsDialog = ({ open, onClose }) => {
         setSuccess(true);
         setHasChanges(false);
         setShowSuccessSnackbar(true);
+        
+        console.log('SettingsDialog: настройки успешно сохранены в контексте');
         
         // Автоматически закрываем диалог через 1.5 секунды
         setTimeout(() => {
@@ -170,14 +181,38 @@ const SettingsDialog = ({ open, onClose }) => {
         return;
       }
       
+      console.log('SettingsDialog: сбрасываем настройки');
+      
       const success = await resetSettings();
       
       if (success) {
-        // Обновляем локальные настройки
-        setLocalSettings({ ...settings });
+        // Обновляем локальные настройки дефолтными значениями
+        const defaultSettings = {
+          language: 'ru',
+          theme: 'dark',
+          autoSave: true,
+          confirmDelete: true,
+          model: 'claude-3-7-sonnet-20250219',
+          maxTokens: 4096,
+          temperature: 0.7,
+          topP: 1.0,
+          messageAnimation: true,
+          compactMode: false,
+          showTimestamps: true,
+          fontSize: 14,
+          soundEnabled: true,
+          desktopNotifications: true,
+          autoBackup: false,
+          backupInterval: 24,
+          maxBackups: 10,
+        };
+        
+        setLocalSettings(defaultSettings);
         setHasChanges(false);
         setSuccess(true);
         setShowSuccessSnackbar(true);
+        
+        console.log('SettingsDialog: настройки сброшены к дефолтным значениям');
         setTimeout(() => setSuccess(false), 3000);
       } else {
         setError('Не удалось сбросить настройки');
@@ -271,9 +306,11 @@ const SettingsDialog = ({ open, onClose }) => {
     onClose();
   };
 
+  // ОБНОВЛЕННЫЙ список доступных моделей с правильными значениями
   const availableModels = [
     { value: 'claude-3-7-sonnet-20250219', label: 'Claude 3.7 Sonnet (рекомендуется)' },
     { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
+    { value: 'claude-3-opus-20240229', label: 'Claude 3 Opus (мощная)' },
     { value: 'claude-3-haiku-20240307', label: 'Claude 3 Haiku (быстрая)' },
   ];
 
@@ -331,7 +368,7 @@ const SettingsDialog = ({ open, onClose }) => {
 
           {hasChanges && (
             <Alert severity="info" sx={{ mb: 2 }}>
-              У вас есть несохраненные изменения
+              У вас есть несохраненные изменения. Модель: {localSettings.model}
             </Alert>
           )}
           
@@ -397,20 +434,33 @@ const SettingsDialog = ({ open, onClose }) => {
             </Box>
           </TabPanel>
 
-          {/* Настройки AI */}
+          {/* Настройки AI - КРИТИЧЕСКИ ВАЖНАЯ ВКЛАДКА */}
           <TabPanel value={activeTab} index={1}>
             <Box sx={{ space: 3 }}>
+              <Alert severity="info" sx={{ mb: 3 }}>
+                <Typography variant="body2">
+                  <strong>Текущая модель:</strong> {localSettings.model}
+                </Typography>
+              </Alert>
+
               <FormControl fullWidth sx={{ mb: 3 }}>
-                <InputLabel id="model-label">Модель</InputLabel>
+                <InputLabel id="model-label">Модель Claude</InputLabel>
                 <Select
                   labelId="model-label"
                   value={localSettings.model || 'claude-3-7-sonnet-20250219'}
-                  label="Модель"
+                  label="Модель Claude"
                   onChange={handleSelectChange('model')}
                 >
                   {availableModels.map(model => (
                     <MenuItem key={model.value} value={model.value}>
-                      {model.label}
+                      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                        <Typography variant="body1">
+                          {model.label}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {model.value}
+                        </Typography>
+                      </Box>
                     </MenuItem>
                   ))}
                 </Select>
@@ -453,6 +503,12 @@ const SettingsDialog = ({ open, onClose }) => {
                 valueLabelDisplay="auto"
                 sx={{ mb: 3 }}
               />
+
+              <Alert severity="warning" sx={{ mt: 2 }}>
+                <Typography variant="body2">
+                  <strong>Важно:</strong> После изменения модели нажмите "Сохранить" для применения изменений.
+                </Typography>
+              </Alert>
             </Box>
           </TabPanel>
 
@@ -648,7 +704,7 @@ const SettingsDialog = ({ open, onClose }) => {
           variant="filled"
           sx={{ width: '100%' }}
         >
-          Настройки успешно сохранены!
+          Настройки успешно сохранены! Модель: {localSettings.model}
         </Alert>
       </Snackbar>
     </>
