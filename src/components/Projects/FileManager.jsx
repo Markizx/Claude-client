@@ -3,16 +3,19 @@ import {
   Box,
   Button,
   Typography,
-  List,
-  ListItem,
-  ListItemIcon,
-  ListItemText,
-  ListItemSecondaryAction,
   IconButton,
   Paper,
-  Divider,
   CircularProgress,
   Tooltip,
+  Card,
+  CardContent,
+  CardActions,
+  Grid,
+  Avatar,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText,
 } from '@mui/material';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
@@ -22,6 +25,9 @@ import TextSnippetIcon from '@mui/icons-material/TextSnippet';
 import DeleteIcon from '@mui/icons-material/Delete';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import DownloadIcon from '@mui/icons-material/Download';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
+import EditIcon from '@mui/icons-material/Edit';
+import InfoIcon from '@mui/icons-material/Info';
 import { useDropzone } from 'react-dropzone';
 
 // Функция форматирования размера файла
@@ -36,24 +42,248 @@ const formatFileSize = (bytes) => {
 };
 
 // Функция выбора иконки в зависимости от типа файла
-const getFileIcon = (fileType) => {
+const getFileIcon = (fileType, fileName) => {
+  const iconProps = { sx: { fontSize: 40 } };
+  
   if (fileType?.includes('pdf')) {
-    return <PictureAsPdfIcon />;
+    return <PictureAsPdfIcon {...iconProps} color="error" />;
   } else if (fileType?.includes('image')) {
-    return <ImageIcon />;
-  } else if (fileType?.includes('text')) {
-    return <TextSnippetIcon />;
+    return <ImageIcon {...iconProps} color="primary" />;
+  } else if (fileType?.includes('text') || fileName?.endsWith('.md') || fileName?.endsWith('.txt')) {
+    return <TextSnippetIcon {...iconProps} color="info" />;
   } else if (
     fileType?.includes('javascript') || 
     fileType?.includes('json') || 
     fileType?.includes('html') || 
     fileType?.includes('css') || 
-    fileType?.includes('python')
+    fileType?.includes('python') ||
+    fileName?.endsWith('.js') ||
+    fileName?.endsWith('.jsx') ||
+    fileName?.endsWith('.ts') ||
+    fileName?.endsWith('.tsx') ||
+    fileName?.endsWith('.py') ||
+    fileName?.endsWith('.html') ||
+    fileName?.endsWith('.css') ||
+    fileName?.endsWith('.json')
   ) {
-    return <CodeIcon />;
+    return <CodeIcon {...iconProps} color="success" />;
   } else {
-    return <InsertDriveFileIcon />;
+    return <InsertDriveFileIcon {...iconProps} color="action" />;
   }
+};
+
+// Функция для получения цвета типа файла
+const getFileTypeColor = (fileType, fileName) => {
+  if (fileType?.includes('pdf')) {
+    return '#f44336'; // красный
+  } else if (fileType?.includes('image')) {
+    return '#2196f3'; // синий
+  } else if (fileType?.includes('text') || fileName?.endsWith('.md') || fileName?.endsWith('.txt')) {
+    return '#2196f3'; // синий
+  } else if (
+    fileType?.includes('javascript') || 
+    fileType?.includes('json') || 
+    fileType?.includes('html') || 
+    fileType?.includes('css') || 
+    fileType?.includes('python') ||
+    fileName?.endsWith('.js') ||
+    fileName?.endsWith('.jsx') ||
+    fileName?.endsWith('.ts') ||
+    fileName?.endsWith('.tsx') ||
+    fileName?.endsWith('.py') ||
+    fileName?.endsWith('.html') ||
+    fileName?.endsWith('.css') ||
+    fileName?.endsWith('.json')
+  ) {
+    return '#4caf50'; // зеленый
+  } else {
+    return '#757575'; // серый
+  }
+};
+
+// Компонент карточки файла
+const FileCard = ({ file, onDownload, onDelete, onEdit, loading }) => {
+  const [anchorEl, setAnchorEl] = useState(null);
+  const open = Boolean(anchorEl);
+
+  const handleMenuClick = (event) => {
+    event.stopPropagation();
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleMenuClose = () => {
+    setAnchorEl(null);
+  };
+
+  const handleDownload = () => {
+    onDownload(file);
+    handleMenuClose();
+  };
+
+  const handleDelete = () => {
+    onDelete(file.id);
+    handleMenuClose();
+  };
+
+  const handleEdit = () => {
+    onEdit && onEdit(file);
+    handleMenuClose();
+  };
+
+  return (
+    <Card 
+      sx={{ 
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        transition: 'all 0.2s ease',
+        '&:hover': {
+          boxShadow: 4,
+          transform: 'translateY(-2px)'
+        },
+        position: 'relative'
+      }}
+    >
+      <CardContent sx={{ 
+        flexGrow: 1, 
+        display: 'flex', 
+        flexDirection: 'column', 
+        alignItems: 'center',
+        textAlign: 'center',
+        p: 2,
+        pb: 1
+      }}>
+        {/* Иконка файла */}
+        <Box sx={{ mb: 2 }}>
+          {getFileIcon(file.type, file.name)}
+        </Box>
+
+        {/* Название файла */}
+        <Typography 
+          variant="subtitle2" 
+          sx={{ 
+            mb: 1,
+            wordBreak: 'break-word',
+            overflow: 'hidden',
+            display: '-webkit-box',
+            WebkitBoxOrient: 'vertical',
+            WebkitLineClamp: 2,
+            lineHeight: 1.2,
+            height: '2.4em'
+          }}
+          title={file.name}
+        >
+          {file.name}
+        </Typography>
+
+        {/* Размер файла */}
+        <Typography 
+          variant="caption" 
+          color="text.secondary"
+          sx={{ mb: 1 }}
+        >
+          {formatFileSize(file.size)}
+        </Typography>
+
+        {/* Тип файла */}
+        <Box 
+          sx={{ 
+            px: 1, 
+            py: 0.5, 
+            borderRadius: 1, 
+            bgcolor: getFileTypeColor(file.type, file.name),
+            color: 'white',
+            fontSize: '0.75rem',
+            fontWeight: 'bold',
+            textTransform: 'uppercase'
+          }}
+        >
+          {file.type?.split('/')[1] || 'file'}
+        </Box>
+
+        {/* Описание файла, если есть */}
+        {file.description && (
+          <Typography 
+            variant="caption" 
+            color="text.secondary"
+            sx={{ 
+              mt: 1,
+              overflow: 'hidden',
+              display: '-webkit-box',
+              WebkitBoxOrient: 'vertical',
+              WebkitLineClamp: 2,
+            }}
+          >
+            {file.description}
+          </Typography>
+        )}
+      </CardContent>
+
+      <CardActions sx={{ 
+        justifyContent: 'space-between', 
+        px: 2, 
+        pb: 2,
+        pt: 0
+      }}>
+        {/* Кнопка скачивания */}
+        <Tooltip title="Скачать файл">
+          <IconButton 
+            size="small" 
+            onClick={(e) => {
+              e.stopPropagation();
+              onDownload(file);
+            }}
+            disabled={loading}
+            color="primary"
+          >
+            <DownloadIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+
+        {/* Меню действий */}
+        <Tooltip title="Действия">
+          <IconButton 
+            size="small" 
+            onClick={handleMenuClick}
+            disabled={loading}
+          >
+            <MoreVertIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+
+        <Menu
+          anchorEl={anchorEl}
+          open={open}
+          onClose={handleMenuClose}
+          transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+          anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+        >
+          <MenuItem onClick={handleDownload}>
+            <ListItemIcon>
+              <DownloadIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Скачать</ListItemText>
+          </MenuItem>
+          
+          {onEdit && (
+            <MenuItem onClick={handleEdit}>
+              <ListItemIcon>
+                <EditIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Редактировать</ListItemText>
+            </MenuItem>
+          )}
+          
+          <MenuItem onClick={handleDelete} sx={{ color: 'error.main' }}>
+            <ListItemIcon>
+              <DeleteIcon fontSize="small" color="error" />
+            </ListItemIcon>
+            <ListItemText>Удалить</ListItemText>
+          </MenuItem>
+        </Menu>
+      </CardActions>
+    </Card>
+  );
 };
 
 const FileManager = ({ files, onUpload, onRemove, loading }) => {
@@ -74,6 +304,7 @@ const FileManager = ({ files, onUpload, onRemove, loading }) => {
       }
     } catch (error) {
       console.error('Ошибка при загрузке файлов:', error);
+      setError('Ошибка при загрузке файлов: ' + (error.message || error));
     } finally {
       setUploading(false);
     }
@@ -83,7 +314,13 @@ const FileManager = ({ files, onUpload, onRemove, loading }) => {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     noClick: false,
-    noKeyboard: false
+    noKeyboard: false,
+    accept: {
+      'text/*': ['.txt', '.md', '.js', '.jsx', '.ts', '.tsx', '.html', '.css', '.json', '.xml', '.csv'],
+      'image/*': ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'],
+      'application/pdf': ['.pdf'],
+      'application/json': ['.json'],
+    }
   });
 
   // Обработчик выбора файлов
@@ -101,6 +338,7 @@ const FileManager = ({ files, onUpload, onRemove, loading }) => {
       }
     } catch (error) {
       console.error('Ошибка при выборе файлов:', error);
+      setError('Ошибка при выборе файлов: ' + (error.message || error));
     } finally {
       setUploading(false);
     }
@@ -116,12 +354,17 @@ const FileManager = ({ files, onUpload, onRemove, loading }) => {
       }
     } catch (error) {
       console.error('Ошибка при скачивании файла:', error);
+      setError('Ошибка при скачивании файла: ' + (error.message || error));
     }
   };
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', mb: 2 }}>
+      {/* Кнопка загрузки */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h6">
+          Файлы проекта ({files?.length || 0})
+        </Typography>
         <Button
           variant="contained"
           color="primary"
@@ -134,87 +377,106 @@ const FileManager = ({ files, onUpload, onRemove, loading }) => {
         </Button>
       </Box>
 
+      {/* Зона drag and drop */}
       <Paper 
         variant="outlined"
         sx={{ 
           borderRadius: 2,
           overflow: 'hidden',
-          p: 2,
-          mb: 2,
-          border: isDragActive ? '2px dashed #6e56cf' : '1px solid rgba(0, 0, 0, 0.12)',
+          p: 3,
+          mb: 3,
+          border: isDragActive ? '2px dashed #6e56cf' : '2px dashed rgba(0, 0, 0, 0.12)',
           backgroundColor: isDragActive ? 'rgba(110, 86, 207, 0.08)' : 'transparent',
-          cursor: 'pointer'
+          cursor: 'pointer',
+          transition: 'all 0.2s ease'
         }}
         {...getRootProps()}
       >
         <input {...getInputProps()} />
         
-        {isDragActive ? (
-          <Box sx={{ textAlign: 'center', py: 3 }}>
-            <CloudUploadIcon fontSize="large" color="primary" sx={{ mb: 1 }} />
-            <Typography variant="body1" color="primary">
-              Перетащите файлы сюда...
-            </Typography>
-          </Box>
-        ) : (
-          <Box sx={{ textAlign: 'center', py: 3 }}>
-            <CloudUploadIcon fontSize="large" color="action" sx={{ mb: 1, opacity: 0.6 }} />
-            <Typography variant="body1" color="text.secondary">
-              Перетащите файлы сюда или нажмите для выбора
-            </Typography>
-          </Box>
-        )}
+        <Box sx={{ textAlign: 'center' }}>
+          <CloudUploadIcon 
+            sx={{ 
+              fontSize: 48, 
+              color: isDragActive ? 'primary.main' : 'action.disabled',
+              mb: 2 
+            }} 
+          />
+          <Typography 
+            variant="h6" 
+            color={isDragActive ? 'primary.main' : 'text.secondary'}
+            gutterBottom
+          >
+            {isDragActive ? 'Перетащите файлы сюда...' : 'Перетащите файлы или нажмите для выбора'}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Поддерживаются: изображения, текст, код, PDF, JSON
+          </Typography>
+        </Box>
       </Paper>
 
+      {/* Ошибки */}
+      {error && (
+        <Paper sx={{ p: 2, mb: 3, bgcolor: 'error.light', color: 'error.contrastText' }}>
+          <Typography variant="body2">
+            {error}
+          </Typography>
+          <Button 
+            size="small" 
+            onClick={() => setError(null)}
+            sx={{ mt: 1, color: 'inherit' }}
+          >
+            Закрыть
+          </Button>
+        </Paper>
+      )}
+
+      {/* Индикатор загрузки */}
+      {uploading && (
+        <Paper sx={{ p: 2, mb: 3, bgcolor: 'info.light', color: 'info.contrastText' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <CircularProgress size={20} color="inherit" />
+            <Typography variant="body2">
+              Загрузка файлов...
+            </Typography>
+          </Box>
+        </Paper>
+      )}
+
+      {/* Отображение файлов в виде плиток */}
       {files && files.length > 0 ? (
+        <Grid container spacing={2}>
+          {files.map((file, index) => (
+            <Grid item xs={12} sm={6} md={4} lg={3} key={file.id || index}>
+              <FileCard
+                file={file}
+                onDownload={handleDownloadFile}
+                onDelete={onRemove}
+                loading={loading}
+              />
+            </Grid>
+          ))}
+        </Grid>
+      ) : (
         <Paper 
-          variant="outlined"
+          variant="outlined" 
           sx={{ 
+            p: 4, 
+            textAlign: 'center', 
             borderRadius: 2,
-            overflow: 'hidden'
+            bgcolor: 'background.default'
           }}
         >
-          <List sx={{ width: '100%' }}>
-            {files.map((file, index) => (
-              <React.Fragment key={file.id || index}>
-                <ListItem>
-                  <ListItemIcon>
-                    {getFileIcon(file.type)}
-                  </ListItemIcon>
-                  <ListItemText
-                    primary={file.name}
-                    secondary={formatFileSize(file.size)}
-                  />
-                  <ListItemSecondaryAction>
-                    <Tooltip title="Скачать файл">
-                      <IconButton 
-                        edge="end" 
-                        onClick={() => handleDownloadFile(file)}
-                        disabled={loading}
-                      >
-                        <DownloadIcon />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Удалить файл">
-                      <IconButton 
-                        edge="end" 
-                        onClick={() => onRemove(file.id)}
-                        disabled={loading}
-                      >
-                        <DeleteIcon />
-                      </IconButton>
-                    </Tooltip>
-                  </ListItemSecondaryAction>
-                </ListItem>
-                {index < files.length - 1 && <Divider />}
-              </React.Fragment>
-            ))}
-          </List>
+          <InsertDriveFileIcon 
+            sx={{ fontSize: 64, color: 'action.disabled', mb: 2 }} 
+          />
+          <Typography variant="h6" color="text.secondary" gutterBottom>
+            Нет загруженных файлов
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Загрузите файлы для работы с контекстом проекта
+          </Typography>
         </Paper>
-      ) : (
-        <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 4 }}>
-          Нет загруженных файлов
-        </Typography>
       )}
     </Box>
   );

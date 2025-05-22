@@ -1,10 +1,17 @@
+/* src/styles/themes/dark.css - ОБНОВЛЕННАЯ ВЕРСИЯ */
 [data-theme="dark"] {
-  --background-primary: #121212;
-  --background-secondary: #1e1e1e;
-  --background-tertiary: #2d2d2d;
-  --text-primary: #ffffff;
-  --text-secondary: #b3b3b3;
-  --text-disabled: #666666;
-  --border-color: #3d3d3d;
-  --shadow: rgba(0, 0, 0, 0.5);
+  /* МЯГКАЯ темная тема - менее агрессивные цвета */
+  --background-primary: #1a1a1a;    /* Было #121212 - основной фон теперь светлее */
+  --background-secondary: #2d2d2d;  /* Было #1e1e1e - боковая панель серее */
+  --background-tertiary: #3a3a3a;   /* Было #2d2d2d - элементы еще светлее */
+  --text-primary: #e8e8e8;          /* Было #ffffff - текст мягче для глаз */
+  --text-secondary: #b8b8b8;        /* Было #b3b3b3 - вторичный текст чуть светлее */
+  --text-disabled: #888888;         /* Было #666666 - отключенный текст светлее */
+  --border-color: rgba(255, 255, 255, 0.15); /* Было 0.12 - границы чуть видимее */
+  --shadow: rgba(0, 0, 0, 0.4);     /* Было 0.5 - тени мягче */
+  
+  /* Дополнительные цвета для более комфортного восприятия */
+  --background-hover: #404040;      /* Для hover эффектов */
+  --background-selected: #4a4a4a;   /* Для выбранных элементов */
+  --accent-muted: rgba(157, 134, 233, 0.1); /* Приглушенный акцент */
 }

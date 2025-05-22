@@ -15,6 +15,7 @@ import {
   Typography,
   Alert,
   Divider,
+  Collapse,
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
@@ -22,6 +23,8 @@ import FolderIcon from '@mui/icons-material/Folder';
 import CloseIcon from '@mui/icons-material/Close';
 import MicIcon from '@mui/icons-material/Mic';
 import StopIcon from '@mui/icons-material/Stop';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { useDropzone } from 'react-dropzone';
 import { useProject } from '../../contexts/ProjectContext';
 
@@ -38,7 +41,8 @@ const InputArea = ({
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [error, setError] = useState('');
-  const [projectFiles, setProjectFiles] = useState([]); // ДОБАВЛЕНО: локальное состояние для файлов проекта
+  const [projectFiles, setProjectFiles] = useState([]);
+  const [projectFilesExpanded, setProjectFilesExpanded] = useState(true); // ДОБАВЛЕНО: состояние сворачивания
   const fileInputRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const recordingIntervalRef = useRef(null);
@@ -58,13 +62,13 @@ const InputArea = ({
         // Получаем файлы проекта
         getProjectFiles(selectedProjectId).then(files => {
           console.log('Файлы через getProjectFiles:', files);
-          setProjectFiles(files); // ИСПРАВЛЕНО: сохраняем в локальном состоянии
+          setProjectFiles(files);
         });
       } else {
-        setProjectFiles([]); // Очищаем если проект не найден
+        setProjectFiles([]);
       }
     } else {
-      setProjectFiles([]); // Очищаем если проект не выбран
+      setProjectFiles([]);
     }
   }, [selectedProjectId, projects]);
 
@@ -326,6 +330,11 @@ const InputArea = ({
     }
   };
 
+  // ДОБАВЛЕНО: переключение сворачивания файлов проекта
+  const toggleProjectFiles = () => {
+    setProjectFilesExpanded(!projectFilesExpanded);
+  };
+
   // Голосовой ввод
   const handleVoiceInput = (e) => {
     if (e && typeof e.stopPropagation === 'function') {
@@ -473,7 +482,7 @@ const InputArea = ({
         </FormControl>
       )}
 
-      {/* ДОБАВЛЕНО: Отображение файлов проекта */}
+      {/* ОБНОВЛЕНО: Сворачиваемое отображение файлов проекта */}
       {projectFiles.length > 0 && (
         <Paper
           variant="outlined"
@@ -486,28 +495,45 @@ const InputArea = ({
             borderColor: 'success.main',
           }}
         >
-          <Typography variant="body2" color="success.main" sx={{ mb: 1, fontWeight: 'bold' }}>
-            📁 Файлы проекта будут переданы как контекст ({projectFiles.length}):
-          </Typography>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-            {projectFiles.map((file, index) => (
-              <Chip
-                key={file.id || index}
-                label={
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                    <span>{file.name}</span>
-                    <Typography variant="caption" color="text.secondary">
-                      ({Math.round(file.size / 1024)}KB)
-                    </Typography>
-                  </Box>
-                }
-                variant="outlined"
-                color="success"
-                size="small"
-                sx={{ maxWidth: 250 }}
-              />
-            ))}
+          <Box 
+            sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+              mb: projectFilesExpanded ? 1 : 0
+            }}
+            onClick={toggleProjectFiles}
+          >
+            <Typography variant="body2" color="success.main" sx={{ fontWeight: 'bold' }}>
+              📁 Файлы проекта будут переданы как контекст ({projectFiles.length})
+            </Typography>
+            <IconButton size="small" color="success">
+              {projectFilesExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+            </IconButton>
           </Box>
+          
+          <Collapse in={projectFilesExpanded}>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+              {projectFiles.map((file, index) => (
+                <Chip
+                  key={file.id || index}
+                  label={
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <span>{file.name}</span>
+                      <Typography variant="caption" color="text.secondary">
+                        ({Math.round(file.size / 1024)}KB)
+                      </Typography>
+                    </Box>
+                  }
+                  variant="outlined"
+                  color="success"
+                  size="small"
+                  sx={{ maxWidth: 250 }}
+                />
+              ))}
+            </Box>
+          </Collapse>
         </Paper>
       )}
 

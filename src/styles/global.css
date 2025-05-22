@@ -14,14 +14,14 @@ html, body, #root {
 
 :root {
   /* Базовые CSS переменные для тем */
-  --background-primary: #ffffff;
-  --background-secondary: #f5f5f7;
-  --background-tertiary: #f0f0f0;
-  --text-primary: #000000;
-  --text-secondary: #666666;
-  --text-disabled: #999999;
-  --border-color: rgba(0, 0, 0, 0.12);
-  --shadow: rgba(0, 0, 0, 0.1);
+  --background-primary: #fefdf8;
+  --background-secondary: #f8f6f0;
+  --background-tertiary: #f0ede3;
+  --text-primary: #2d2a26;
+  --text-secondary: #6b6560;
+  --text-disabled: #a39a91;
+  --border-color: rgba(107, 101, 96, 0.2);
+  --shadow: rgba(45, 42, 38, 0.1);
   --app-font-size: 14px;
 }
 
@@ -37,16 +37,16 @@ html, body, #root {
   --shadow: rgba(0, 0, 0, 0.5);
 }
 
-/* Светлая тема */
+/* Бежевая светлая тема */
 [data-theme="light"] {
-  --background-primary: #ffffff;
-  --background-secondary: #f5f5f7;
-  --background-tertiary: #f0f0f0;
-  --text-primary: #000000;
-  --text-secondary: #666666;
-  --text-disabled: #999999;
-  --border-color: rgba(0, 0, 0, 0.12);
-  --shadow: rgba(0, 0, 0, 0.1);
+  --background-primary: #fefdf8;
+  --background-secondary: #f8f6f0;
+  --background-tertiary: #f0ede3;
+  --text-primary: #2d2a26;
+  --text-secondary: #6b6560;
+  --text-disabled: #a39a91;
+  --border-color: rgba(107, 101, 96, 0.2);
+  --shadow: rgba(45, 42, 38, 0.1);
 }
 
 body {
@@ -76,22 +76,13 @@ code {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--border-color);
   border-radius: 3px;
   transition: background 0.2s ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.3);
-}
-
-/* Темная тема скроллбары */
-[data-theme="dark"] ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: var(--text-secondary);
 }
 
 /* Анимации */
@@ -212,6 +203,7 @@ code {
   color: var(--text-primary);
   border-bottom-left-radius: 6px;
   animation: slideInFromLeft 0.3s ease-out;
+  border: 1px solid var(--border-color);
 }
 
 /* Стили для кода в сообщениях */
@@ -411,4 +403,50 @@ code {
 
 .MuiButton-root {
   transition: all 0.2s ease !important;
+}
+
+/* Стили для бежевой темы */
+[data-theme="light"] .MuiPaper-root {
+  background-color: var(--background-primary) !important;
+  border: 1px solid var(--border-color) !important;
+}
+
+[data-theme="light"] .MuiButton-outlined {
+  border-color: var(--border-color) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="light"] .MuiButton-outlined:hover {
+  background-color: var(--background-tertiary) !important;
+  border-color: var(--text-secondary) !important;
+}
+
+[data-theme="light"] .MuiTextField-root .MuiOutlinedInput-root {
+  background-color: var(--background-primary) !important;
+}
+
+[data-theme="light"] .MuiTextField-root .MuiOutlinedInput-notchedOutline {
+  border-color: var(--border-color) !important;
+}
+
+[data-theme="light"] .MuiChip-root {
+  background-color: var(--background-tertiary) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-color) !important;
+}
+
+[data-theme="light"] .MuiAlert-root {
+  background-color: var(--background-secondary) !important;
+  border: 1px solid var(--border-color) !important;
+}
+
+/* Стили для артефактов в бежевой теме */
+[data-theme="light"] .artifact {
+  background-color: var(--background-primary) !important;
+  border: 1px solid var(--border-color) !important;
+}
+
+[data-theme="light"] .artifact-header {
+  background-color: var(--background-tertiary) !important;
+  border-bottom: 1px solid var(--border-color) !important;
 }
