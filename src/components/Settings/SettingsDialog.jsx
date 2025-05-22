@@ -49,56 +49,23 @@ const SettingsDialog = ({ open, onClose }) => {
   const { settings, updateSettings, resetSettings, error: settingsError, loading: settingsLoading, apiReady } = useSettings();
   
   const [activeTab, setActiveTab] = useState(0);
-  const [localSettings, setLocalSettings] = useState({
-    // Основные настройки
-    language: 'ru',
-    theme: 'dark',
-    autoSave: true,
-    confirmDelete: true,
-    
-    // Настройки AI
-    model: 'claude-3-7-sonnet-20250219',
-    maxTokens: 4096,
-    temperature: 0.7,
-    topP: 1.0,
-    
-    // Интерфейс
-    messageAnimation: true,
-    compactMode: false,
-    showTimestamps: true,
-    fontSize: 14,
-    
-    // Уведомления
-    soundEnabled: true,
-    desktopNotifications: true,
-    
-    // Резервное копирование
-    autoBackup: false,
-    backupInterval: 24, // часы
-    maxBackups: 10,
-  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
 
-  // Инициализация локальных настроек при открытии диалога
+  // Локальные копии настроек для редактирования
+  const [localSettings, setLocalSettings] = useState({ ...settings });
+
+  // Синхронизация с глобальными настройками при открытии диалога
   useEffect(() => {
-    if (open && settings && Object.keys(settings).length > 0 && !settingsLoading) {
-      console.log('SettingsDialog: Инициализируем локальные настройки:', settings);
-      
-      // Принудительно устанавливаем правильную модель
-      const settingsWithCorrectModel = {
-        ...settings,
-        model: 'claude-3-7-sonnet-20250219'
-      };
-      
-      setLocalSettings(prevLocal => ({ ...prevLocal, ...settingsWithCorrectModel }));
+    if (open && settings) {
+      setLocalSettings({ ...settings });
       setError(null);
       setSuccess(false);
     }
-  }, [open, settings, settingsLoading]);
+  }, [open, settings]);
 
-  // Очистка состояния при закрытии диалога
+  // Очистка состояния при закрытии
   useEffect(() => {
     if (!open) {
       setError(null);
@@ -112,12 +79,9 @@ const SettingsDialog = ({ open, onClose }) => {
   };
 
   const handleInputChange = (field, value) => {
-    console.log(`SettingsDialog: Изменение поля ${field}:`, value);
-    
-    // Специальная обработка для модели - всегда устанавливаем правильную
+    // Принудительно устанавливаем правильную модель
     if (field === 'model') {
       value = 'claude-3-7-sonnet-20250219';
-      console.log('SettingsDialog: Принудительно установлена модель claude-3-7-sonnet-20250219');
     }
     
     setLocalSettings(prev => ({
@@ -152,34 +116,28 @@ const SettingsDialog = ({ open, onClose }) => {
         return;
       }
       
-      // Принудительно устанавливаем правильную модель перед сохранением
+      // Принудительно устанавливаем правильную модель
       const settingsToSave = {
         ...localSettings,
         model: 'claude-3-7-sonnet-20250219'
       };
       
-      console.log('SettingsDialog: Сохраняем настройки:', settingsToSave);
+      console.log('Сохраняем настройки из диалога:', settingsToSave);
       
       const success = await updateSettings(settingsToSave);
       
       if (success) {
         setSuccess(true);
-        setTimeout(() => setSuccess(false), 3000);
-        console.log('SettingsDialog: Настройки успешно сохранены');
-        
-        // Дополнительная проверка - обновляем локальные настройки с правильной моделью
-        setLocalSettings(prevSettings => ({
-          ...prevSettings,
-          model: 'claude-3-7-sonnet-20250219'
-        }));
-        
+        setTimeout(() => {
+          setSuccess(false);
+          onClose(); // Закрываем диалог после успешного сохранения
+        }, 1000);
       } else {
         setError('Не удалось сохранить настройки');
-        console.error('SettingsDialog: Не удалось сохранить настройки');
       }
     } catch (err) {
-      console.error('SettingsDialog: Ошибка при сохранении настроек:', err);
-      setError(`Ошибка сохранения настроек: ${err.message}`);
+      console.error('Ошибка при сохранении настроек:', err);
+      setError(`Ошибка сохранения: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -199,42 +157,19 @@ const SettingsDialog = ({ open, onClose }) => {
         return;
       }
       
-      console.log('SettingsDialog: Сбрасываем настройки');
       const success = await resetSettings();
       
       if (success) {
-        // Сбрасываем локальные настройки к значениям по умолчанию
-        const defaultSettings = {
-          language: 'ru',
-          theme: 'dark',
-          autoSave: true,
-          confirmDelete: true,
-          model: 'claude-3-7-sonnet-20250219',
-          maxTokens: 4096,
-          temperature: 0.7,
-          topP: 1.0,
-          messageAnimation: true,
-          compactMode: false,
-          showTimestamps: true,
-          fontSize: 14,
-          soundEnabled: true,
-          desktopNotifications: true,
-          autoBackup: false,
-          backupInterval: 24,
-          maxBackups: 10,
-        };
-        
-        setLocalSettings(defaultSettings);
+        // Обновляем локальные настройки
+        setLocalSettings({ ...settings });
         setSuccess(true);
         setTimeout(() => setSuccess(false), 3000);
-        console.log('SettingsDialog: Настройки сброшены к значениям по умолчанию');
       } else {
         setError('Не удалось сбросить настройки');
-        console.error('SettingsDialog: Не удалось сбросить настройки');
       }
     } catch (err) {
-      console.error('SettingsDialog: Ошибка при сбросе настроек:', err);
-      setError(`Ошибка сброса настроек: ${err.message}`);
+      console.error('Ошибка при сбросе настроек:', err);
+      setError(`Ошибка сброса: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -282,7 +217,6 @@ const SettingsDialog = ({ open, onClose }) => {
       });
       
       if (result && result.success && result.files && result.files.length > 0) {
-        // Запрашиваем подтверждение восстановления
         const confirmed = window.confirm(
           'Восстановление базы данных перезапишет все текущие данные. Продолжить?'
         );
@@ -308,12 +242,13 @@ const SettingsDialog = ({ open, onClose }) => {
   };
 
   const handleClose = () => {
+    // Сбрасываем локальные изменения при закрытии без сохранения
+    setLocalSettings({ ...settings });
     setError(null);
     setSuccess(false);
     onClose();
   };
 
-  // Доступные модели Claude - показываем только правильную
   const availableModels = [
     { value: 'claude-3-7-sonnet-20250219', label: 'Claude 3.7 Sonnet (рекомендуется)' },
   ];
@@ -338,7 +273,6 @@ const SettingsDialog = ({ open, onClose }) => {
       </DialogTitle>
       
       <DialogContent dividers>
-        {/* Статус состояния */}
         {!apiReady && (
           <Alert severity="warning" sx={{ mb: 2 }}>
             API не готов. Подождите несколько секунд...
@@ -410,6 +344,7 @@ const SettingsDialog = ({ open, onClose }) => {
                 />
               }
               label="Автоматическое сохранение"
+              sx={{ mb: 2 }}
             />
 
             <FormControlLabel
@@ -499,6 +434,7 @@ const SettingsDialog = ({ open, onClose }) => {
                 />
               }
               label="Анимация сообщений"
+              sx={{ mb: 2 }}
             />
 
             <FormControlLabel
@@ -509,6 +445,7 @@ const SettingsDialog = ({ open, onClose }) => {
                 />
               }
               label="Компактный режим"
+              sx={{ mb: 2 }}
             />
 
             <FormControlLabel
@@ -519,6 +456,7 @@ const SettingsDialog = ({ open, onClose }) => {
                 />
               }
               label="Показывать время сообщений"
+              sx={{ mb: 3 }}
             />
 
             <Typography gutterBottom sx={{ mt: 3 }}>
@@ -543,6 +481,7 @@ const SettingsDialog = ({ open, onClose }) => {
                 />
               }
               label="Звуковые уведомления"
+              sx={{ mb: 2 }}
             />
 
             <FormControlLabel
@@ -613,6 +552,7 @@ const SettingsDialog = ({ open, onClose }) => {
                 />
               }
               label="Автоматическое создание резервных копий"
+              sx={{ mb: 2 }}
             />
 
             {localSettings.autoBackup && (

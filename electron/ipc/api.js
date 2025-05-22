@@ -17,7 +17,6 @@ class ClaudeAPIHandler {
   constructor() {
     this.baseUrl = 'https://api.anthropic.com';
     this.apiVersion = '2023-06-01';
-    // Явно устанавливаем модель по умолчанию
     this.defaultModel = 'claude-3-7-sonnet-20250219';
     
     // Кешируем настройки для быстрого доступа
@@ -28,26 +27,7 @@ class ClaudeAPIHandler {
       topP: 1.0
     };
     
-    console.log('ClaudeAPIHandler инициализирован с настройками:', this.cachedSettings);
-  }
-
-  // Обновление кешированных настроек
-  updateSettings(newSettings) {
-    try {
-      if (newSettings && typeof newSettings === 'object') {
-        this.cachedSettings = {
-          ...this.cachedSettings,
-          ...newSettings
-        };
-        
-        // Всегда принудительно устанавливаем правильную модель
-        this.cachedSettings.model = 'claude-3-7-sonnet-20250219';
-        
-        console.log('ClaudeAPIHandler: обновлены настройки:', this.cachedSettings);
-      }
-    } catch (error) {
-      console.error('Ошибка обновления настроек в API handler:', error);
-    }
+    console.log('ClaudeAPIHandler инициализирован с дефолтными настройками');
   }
 
   // Get API key
@@ -129,16 +109,20 @@ class ClaudeAPIHandler {
     }
   }
 
-  // Получение настроек из кеша или из storageManager
+  // Получение настроек (упрощенная версия)
   async getSettings() {
     try {
       // Пытаемся получить настройки из storageManager
       if (global.storageManager) {
         const settings = global.storageManager.getAllSettings();
         if (settings && Object.keys(settings).length > 0) {
-          // Обновляем кеш
-          this.updateSettings(settings);
-          console.log('ClaudeAPIHandler: настройки получены из storageManager:', settings);
+          // Обновляем кеш, принудительно устанавливаем правильную модель
+          this.cachedSettings = {
+            ...this.cachedSettings,
+            ...settings,
+            model: 'claude-3-7-sonnet-20250219'
+          };
+          console.log('ClaudeAPIHandler: настройки получены из storageManager:', this.cachedSettings);
           return this.cachedSettings;
         }
       }
@@ -278,7 +262,7 @@ class ClaudeAPIHandler {
     const settings = await this.getSettings();
     console.log('Используем настройки для API запроса:', settings);
     
-    // Используем настройки из кеша
+    // Используем настройки из кеша (они уже обновлены выше)
     const modelName = settings.model || this.defaultModel;
     const maxTokens = settings.maxTokens || 4096;
     const temperature = settings.temperature || 0.7;
@@ -416,15 +400,7 @@ function register(ipcMainInstance, storageManagerRef = null) {
   // Сохраняем ссылку на storageManager для доступа к настройкам
   if (storageManagerRef) {
     global.storageManager = storageManagerRef;
-    
-    // Инициализируем настройки в API handler
-    try {
-      const settings = storageManagerRef.getAllSettings();
-      apiHandler.updateSettings(settings);
-      console.log('API handler инициализирован с настройками из storageManager');
-    } catch (error) {
-      console.error('Ошибка инициализации настроек в API handler:', error);
-    }
+    console.log('API handler связан с storageManager');
   }
 
   // API Key handling

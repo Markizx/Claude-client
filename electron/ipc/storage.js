@@ -41,7 +41,7 @@ class SettingsStore {
       }
     });
     
-    console.log('SettingsStore инициализирован с настройками:', this.getAllSettings());
+    console.log('SettingsStore инициализирован');
   }
 
   // Получение всех настроек
@@ -55,7 +55,7 @@ class SettingsStore {
         settings.model = 'claude-3-7-sonnet-20250219';
       }
       
-      console.log('SettingsStore: Загружены настройки:', settings);
+      console.log('SettingsStore: Возвращаем настройки:', settings);
       return settings;
     } catch (error) {
       console.error('Ошибка загрузки настроек:', error);
@@ -71,32 +71,19 @@ class SettingsStore {
         return false;
       }
 
-      // Получаем текущие настройки
-      const currentSettings = this.getAllSettings();
-      
-      // Объединяем с новыми настройками
-      const mergedSettings = { ...currentSettings, ...newSettings };
-      
+      console.log('SettingsStore: Сохраняем настройки:', newSettings);
+
       // Всегда устанавливаем правильную модель
-      mergedSettings.model = 'claude-3-7-sonnet-20250219';
+      const settingsToSave = {
+        ...newSettings,
+        model: 'claude-3-7-sonnet-20250219'
+      };
       
-      // Очищаем null/undefined значения
-      const cleanSettings = {};
-      for (const [key, value] of Object.entries(mergedSettings)) {
-        cleanSettings[key] = value === null || value === undefined ? '' : value;
-      }
-      
-      // Сохраняем все настройки
+      // Очищаем старые настройки и сохраняем новые
       this.store.clear();
-      this.store.set(cleanSettings);
+      this.store.set(settingsToSave);
       
-      console.log('SettingsStore: Настройки успешно сохранены:', cleanSettings);
-      
-      // Уведомляем API handler об изменении настроек
-      if (global.apiHandler) {
-        global.apiHandler.updateSettings(cleanSettings);
-      }
-      
+      console.log('SettingsStore: Настройки успешно сохранены');
       return true;
     } catch (error) {
       console.error('Ошибка сохранения настроек:', error);
@@ -109,18 +96,13 @@ class SettingsStore {
     if (!key) return false;
     
     try {
-      // Очищаем null/undefined значения
-      const cleanValue = value === null || value === undefined ? '' : value;
-      
-      this.store.set(key, cleanValue);
-      console.log(`SettingsStore: Настройка обновлена: ${key} = ${cleanValue}`);
-      
-      // Уведомляем API handler об изменении настроек
-      if (global.apiHandler) {
-        const allSettings = this.getAllSettings();
-        global.apiHandler.updateSettings(allSettings);
+      // Принудительно устанавливаем правильную модель
+      if (key === 'model') {
+        value = 'claude-3-7-sonnet-20250219';
       }
       
+      this.store.set(key, value);
+      console.log(`SettingsStore: Настройка обновлена: ${key} = ${value}`);
       return true;
     } catch (error) {
       console.error(`Ошибка обновления настройки ${key}:`, error);
@@ -145,12 +127,6 @@ class SettingsStore {
       // Устанавливаем дефолтные значения
       this.store.set(this.store.defaults);
       console.log('SettingsStore: Настройки сброшены к значениям по умолчанию');
-      
-      // Уведомляем API handler об изменении настроек
-      if (global.apiHandler) {
-        global.apiHandler.updateSettings(this.store.defaults);
-      }
-      
       return true;
     } catch (error) {
       console.error('Ошибка сброса настроек:', error);
@@ -1092,6 +1068,8 @@ app.on('quit', () => {
 
 // Функция для регистрации обработчиков IPC
 function register(ipcMainInstance) {
+  console.log('Регистрируем обработчики IPC для настроек');
+
   // Settings handlers
   ipcMainInstance.handle('settings:getAll', async () => {
     try {
