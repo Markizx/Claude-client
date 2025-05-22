@@ -44,6 +44,7 @@ export const SettingsProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [apiReady, setApiReady] = useState(false);
+  const [saveInProgress, setSaveInProgress] = useState(false);
 
   // Применение темы
   const applyTheme = useCallback((theme) => {
@@ -55,6 +56,45 @@ export const SettingsProvider = ({ children }) => {
       document.documentElement.setAttribute('data-theme', appliedTheme);
     } else {
       document.documentElement.setAttribute('data-theme', theme);
+    }
+  }, []);
+
+  // Применение настроек интерфейса
+  const applyInterfaceSettings = useCallback((currentSettings) => {
+    if (!currentSettings) return;
+
+    // Применяем тему
+    if (currentSettings.theme) {
+      applyTheme(currentSettings.theme);
+    }
+
+    // Применяем размер шрифта
+    if (currentSettings.fontSize) {
+      document.documentElement.style.setProperty('--app-font-size', `${currentSettings.fontSize}px`);
+    }
+
+    // Применяем другие настройки интерфейса
+    if (currentSettings.compactMode !== undefined) {
+      document.documentElement.setAttribute('data-compact-mode', currentSettings.compactMode.toString());
+    }
+
+    console.log('Настройки интерфейса применены:', currentSettings);
+  }, [applyTheme]);
+
+  // Синхронизация с API handler
+  const syncWithAPIHandler = useCallback(async (settingsToSync) => {
+    try {
+      if (window.electronAPI) {
+        // Отправляем настройки в API handler для кеширования
+        const result = await window.electronAPI.updateSettings(settingsToSync);
+        if (!result.success) {
+          console.warn('Не удалось синхронизировать настройки с API handler:', result.error);
+        } else {
+          console.log('Настройки синхронизированы с API handler');
+        }
+      }
+    } catch (error) {
+      console.error('Ошибка синхронизации с API handler:', error);
     }
   }, []);
 
@@ -84,38 +124,55 @@ export const SettingsProvider = ({ children }) => {
       if (!hasAPI) {
         console.warn('electronAPI недоступен, используем дефолтные настройки');
         setSettings(defaultSettings);
-        applyTheme(defaultSettings.theme);
+        applyInterfaceSettings(defaultSettings);
         return;
       }
       
       const savedSettings = await window.electronAPI.getSettings();
       
       if (savedSettings && typeof savedSettings === 'object' && Object.keys(savedSettings).length > 0) {
+        // Объединяем с дефолтными настройками
         const mergedSettings = { ...defaultSettings, ...savedSettings };
-        mergedSettings.model = 'claude-3-7-sonnet-20250219'; // Принудительно правильная модель
         
         setSettings(mergedSettings);
-        applyTheme(mergedSettings.theme);
+        applyInterfaceSettings(mergedSettings);
+        
+        // Синхронизируем с API handler
+        await syncWithAPIHandler(mergedSettings);
+        
         console.log('Настройки загружены:', mergedSettings);
       } else {
         setSettings(defaultSettings);
-        applyTheme(defaultSettings.theme);
+        applyInterfaceSettings(defaultSettings);
+        
         // Сохраняем дефолтные настройки
-        await window.electronAPI.updateSettings(defaultSettings);
+        try {
+          await window.electronAPI.updateSettings(defaultSettings);
+          await syncWithAPIHandler(defaultSettings);
+        } catch (saveError) {
+          console.error('Ошибка сохранения дефолтных настроек:', saveError);
+        }
       }
     } catch (err) {
       console.error('Ошибка загрузки настроек:', err);
       setError(err.message);
       setSettings(defaultSettings);
-      applyTheme(defaultSettings.theme);
+      applyInterfaceSettings(defaultSettings);
     } finally {
       setLoading(false);
     }
-  }, [waitForElectronAPI, applyTheme]);
+  }, [waitForElectronAPI, applyInterfaceSettings, syncWithAPIHandler]);
 
   // Сохранение настроек
   const updateSettings = useCallback(async (newSettings) => {
+    // Предотвращаем множественные одновременные вызовы
+    if (saveInProgress) {
+      console.log('Сохранение уже в процессе, пропускаем...');
+      return false;
+    }
+
     try {
+      setSaveInProgress(true);
       setError(null);
       
       if (!apiReady) {
@@ -124,7 +181,6 @@ export const SettingsProvider = ({ children }) => {
       
       // Объединяем с текущими настройками
       const mergedSettings = { ...settings, ...newSettings };
-      mergedSettings.model = 'claude-3-7-sonnet-20250219'; // Принудительно правильная модель
       
       console.log('Сохраняем настройки:', mergedSettings);
       
@@ -135,10 +191,13 @@ export const SettingsProvider = ({ children }) => {
         // Обновляем локальное состояние
         setSettings(mergedSettings);
         
-        // Применяем тему немедленно
-        applyTheme(mergedSettings.theme);
+        // Применяем настройки интерфейса немедленно
+        applyInterfaceSettings(mergedSettings);
         
-        console.log('Настройки успешно сохранены');
+        // Синхронизируем с API handler
+        await syncWithAPIHandler(mergedSettings);
+        
+        console.log('Настройки успешно сохранены и применены');
         return true;
       } else {
         throw new Error(result?.error || 'Ошибка сохранения настроек');
@@ -147,8 +206,10 @@ export const SettingsProvider = ({ children }) => {
       console.error('Ошибка сохранения настроек:', err);
       setError(err.message);
       return false;
+    } finally {
+      setSaveInProgress(false);
     }
-  }, [settings, apiReady, applyTheme]);
+  }, [settings, apiReady, applyInterfaceSettings, syncWithAPIHandler, saveInProgress]);
 
   // Обновление одной настройки
   const updateSetting = useCallback(async (key, value) => {
@@ -165,10 +226,13 @@ export const SettingsProvider = ({ children }) => {
         setSettings(prev => {
           const updated = { ...prev, [key]: value };
           
-          // Если изменили тему, применяем её
-          if (key === 'theme') {
-            applyTheme(value);
+          // Если изменили настройки интерфейса, применяем их
+          if (['theme', 'fontSize', 'compactMode'].includes(key)) {
+            applyInterfaceSettings(updated);
           }
+          
+          // Синхронизируем с API handler
+          syncWithAPIHandler(updated);
           
           return updated;
         });
@@ -182,7 +246,7 @@ export const SettingsProvider = ({ children }) => {
       setError(err.message);
       return false;
     }
-  }, [apiReady, applyTheme]);
+  }, [apiReady, applyInterfaceSettings, syncWithAPIHandler]);
 
   // Сброс настроек
   const resetSettings = useCallback(async () => {
@@ -197,7 +261,8 @@ export const SettingsProvider = ({ children }) => {
       
       if (result && result.success) {
         setSettings(defaultSettings);
-        applyTheme(defaultSettings.theme);
+        applyInterfaceSettings(defaultSettings);
+        await syncWithAPIHandler(defaultSettings);
         console.log('Настройки сброшены');
         return true;
       } else {
@@ -208,7 +273,7 @@ export const SettingsProvider = ({ children }) => {
       setError(err.message);
       return false;
     }
-  }, [apiReady, applyTheme]);
+  }, [apiReady, applyInterfaceSettings, syncWithAPIHandler]);
 
   // Загружаем настройки при монтировании
   useEffect(() => {
@@ -247,6 +312,7 @@ export const SettingsProvider = ({ children }) => {
     loading,
     error,
     apiReady,
+    saveInProgress,
     setError: useCallback((error) => setError(error), []),
   };
 

@@ -109,18 +109,17 @@ class ClaudeAPIHandler {
     }
   }
 
-  // Получение настроек (упрощенная версия)
+  // Получение настроек (БЕЗ принудительной перезаписи модели)
   async getSettings() {
     try {
       // Пытаемся получить настройки из storageManager
       if (global.storageManager) {
         const settings = global.storageManager.getAllSettings();
         if (settings && Object.keys(settings).length > 0) {
-          // Обновляем кеш, принудительно устанавливаем правильную модель
+          // Обновляем кеш, НЕ перезаписывая модель принудительно
           this.cachedSettings = {
             ...this.cachedSettings,
-            ...settings,
-            model: 'claude-3-7-sonnet-20250219'
+            ...settings
           };
           console.log('ClaudeAPIHandler: настройки получены из storageManager:', this.cachedSettings);
           return this.cachedSettings;
@@ -134,6 +133,19 @@ class ClaudeAPIHandler {
       console.error('Error getting settings for API:', error);
       // Возвращаем кешированные настройки в случае ошибки
       return this.cachedSettings;
+    }
+  }
+
+  // Обновление кешированных настроек (НОВЫЙ МЕТОД)
+  updateCachedSettings(newSettings) {
+    if (newSettings && typeof newSettings === 'object') {
+      // Обновляем только переданные настройки, не затирая остальные
+      this.cachedSettings = { ...this.cachedSettings, ...newSettings };
+      console.log('ClaudeAPIHandler: обновлены кешированные настройки:', this.cachedSettings);
+      return true;
+    } else {
+      console.error('ClaudeAPIHandler: неверный формат настроек для обновления:', newSettings);
+      return false;
     }
   }
 
@@ -258,11 +270,11 @@ class ClaudeAPIHandler {
 
 Всегда отвечай на русском языке, если не попросят иначе.`;
     
-    // Получаем актуальные настройки
-    const settings = await this.getSettings();
-    console.log('Используем настройки для API запроса:', settings);
+    // Получаем актуальные настройки (используем кешированные)
+    const settings = this.cachedSettings;
+    console.log('Используем кешированные настройки для API запроса:', settings);
     
-    // Используем настройки из кеша (они уже обновлены выше)
+    // Используем настройки БЕЗ принудительной перезаписи модели
     const modelName = settings.model || this.defaultModel;
     const maxTokens = settings.maxTokens || 4096;
     const temperature = settings.temperature || 0.7;
@@ -438,6 +450,19 @@ function register(ipcMainInstance, storageManagerRef = null) {
     } catch (error) {
       console.error('Claude API error:', error);
       return { error: error.message || 'Unknown error' };
+    }
+  });
+
+  // НОВЫЙ обработчик для обновления кешированных настроек в API handler
+  ipcMainInstance.handle('api:updateSettings', async (_event, settings) => {
+    try {
+      console.log('API handler получил обновление настроек:', settings);
+      const success = apiHandler.updateCachedSettings(settings);
+      console.log('API handler обновил настройки, результат:', success);
+      return { success };
+    } catch (error) {
+      console.error('Error updating API settings cache:', error);
+      return { success: false, error: error.message };
     }
   });
 }

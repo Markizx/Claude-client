@@ -48,13 +48,6 @@ class SettingsStore {
   getAllSettings() {
     try {
       const settings = this.store.store;
-      
-      // Всегда проверяем и устанавливаем правильную модель
-      if (!settings.model || settings.model !== 'claude-3-7-sonnet-20250219') {
-        this.store.set('model', 'claude-3-7-sonnet-20250219');
-        settings.model = 'claude-3-7-sonnet-20250219';
-      }
-      
       console.log('SettingsStore: Возвращаем настройки:', settings);
       return settings;
     } catch (error) {
@@ -72,16 +65,14 @@ class SettingsStore {
       }
 
       console.log('SettingsStore: Сохраняем настройки:', newSettings);
-
-      // Всегда устанавливаем правильную модель
-      const settingsToSave = {
-        ...newSettings,
-        model: 'claude-3-7-sonnet-20250219'
-      };
+      
+      // Объединяем новые настройки с существующими
+      const currentSettings = this.store.store;
+      const mergedSettings = { ...currentSettings, ...newSettings };
       
       // Очищаем старые настройки и сохраняем новые
       this.store.clear();
-      this.store.set(settingsToSave);
+      this.store.set(mergedSettings);
       
       console.log('SettingsStore: Настройки успешно сохранены');
       return true;
@@ -96,11 +87,6 @@ class SettingsStore {
     if (!key) return false;
     
     try {
-      // Принудительно устанавливаем правильную модель
-      if (key === 'model') {
-        value = 'claude-3-7-sonnet-20250219';
-      }
-      
       this.store.set(key, value);
       console.log(`SettingsStore: Настройка обновлена: ${key} = ${value}`);
       return true;
@@ -321,26 +307,55 @@ class StorageManager {
 
   // Settings methods - используем ТОЛЬКО SettingsStore
   getAllSettings() {
-    return this.settingsStore.getAllSettings();
+    try {
+      const settings = this.settingsStore.getAllSettings();
+      console.log('StorageManager: getAllSettings результат:', settings);
+      return settings;
+    } catch (error) {
+      console.error('StorageManager: ошибка получения настроек:', error);
+      return {};
+    }
   }
 
   updateSettings(settings) {
-    const success = this.settingsStore.saveAllSettings(settings);
-    return { success };
+    try {
+      console.log('StorageManager: updateSettings получил:', settings);
+      const success = this.settingsStore.saveAllSettings(settings);
+      console.log('StorageManager: updateSettings результат:', success);
+      return { success };
+    } catch (error) {
+      console.error('StorageManager: ошибка обновления настроек:', error);
+      return { success: false, error: error.message };
+    }
   }
 
   updateSetting(key, value) {
-    const success = this.settingsStore.updateSetting(key, value);
-    return { success };
+    try {
+      const success = this.settingsStore.updateSetting(key, value);
+      return { success };
+    } catch (error) {
+      console.error('StorageManager: ошибка обновления настройки:', error);
+      return { success: false, error: error.message };
+    }
   }
 
   getSetting(key, defaultValue = null) {
-    return this.settingsStore.getSetting(key, defaultValue);
+    try {
+      return this.settingsStore.getSetting(key, defaultValue);
+    } catch (error) {
+      console.error('StorageManager: ошибка получения настройки:', error);
+      return defaultValue;
+    }
   }
 
   resetSettings() {
-    const success = this.settingsStore.resetSettings();
-    return { success };
+    try {
+      const success = this.settingsStore.resetSettings();
+      return { success };
+    } catch (error) {
+      console.error('StorageManager: ошибка сброса настроек:', error);
+      return { success: false, error: error.message };
+    }
   }
 
   // Chat methods
@@ -1070,7 +1085,7 @@ app.on('quit', () => {
 function register(ipcMainInstance) {
   console.log('Регистрируем обработчики IPC для настроек');
 
-  // Settings handlers
+  // Settings handlers с улучшенной обработкой ошибок
   ipcMainInstance.handle('settings:getAll', async () => {
     try {
       console.log('IPC: получение всех настроек');
@@ -1086,8 +1101,18 @@ function register(ipcMainInstance) {
   ipcMainInstance.handle('settings:update', async (event, settings) => {
     try {
       console.log('IPC: обновление настроек:', settings);
+      
+      if (!settings || typeof settings !== 'object') {
+        throw new Error('Неверный формат настроек');
+      }
+      
       const result = storageManager.updateSettings(settings);
       console.log('IPC: результат обновления настроек:', result);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Неизвестная ошибка при сохранении настроек');
+      }
+      
       return result;
     } catch (error) {
       console.error('IPC: ошибка обновления настроек:', error);
@@ -1098,8 +1123,18 @@ function register(ipcMainInstance) {
   ipcMainInstance.handle('settings:updateSingle', async (event, { key, value }) => {
     try {
       console.log(`IPC: обновление настройки ${key}:`, value);
+      
+      if (!key) {
+        throw new Error('Ключ настройки не может быть пустым');
+      }
+      
       const result = storageManager.updateSetting(key, value);
       console.log(`IPC: результат обновления настройки ${key}:`, result);
+      
+      if (!result.success) {
+        throw new Error(result.error || `Неизвестная ошибка при обновлении настройки ${key}`);
+      }
+      
       return result;
     } catch (error) {
       console.error(`IPC: ошибка обновления настройки ${key}:`, error);
@@ -1124,6 +1159,11 @@ function register(ipcMainInstance) {
       console.log('IPC: сброс настроек');
       const result = storageManager.resetSettings();
       console.log('IPC: результат сброса настроек:', result);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Неизвестная ошибка при сбросе настроек');
+      }
+      
       return result;
     } catch (error) {
       console.error('IPC: ошибка сброса настроек:', error);

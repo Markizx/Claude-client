@@ -114,6 +114,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     console.log('preload: обновление настроек:', settings);
     return ipcRenderer.invoke('settings:update', settings).then(result => {
       console.log('preload: результат обновления настроек:', result);
+      
+      // Дополнительно уведомляем API handler об изменениях
+      if (result.success) {
+        ipcRenderer.invoke('api:updateSettings', settings).catch(error => {
+          console.warn('preload: ошибка синхронизации с API handler:', error);
+        });
+      }
+      
       return result;
     }).catch(error => {
       console.error('preload: ошибка обновления настроек:', error);
@@ -125,10 +133,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     console.log(`preload: обновление настройки ${key}:`, value);
     return ipcRenderer.invoke('settings:updateSingle', { key, value }).then(result => {
       console.log(`preload: результат обновления настройки ${key}:`, result);
+      
+      // Дополнительно уведомляем API handler об изменениях
+      if (result.success) {
+        const partialSettings = {};
+        partialSettings[key] = value;
+        ipcRenderer.invoke('api:updateSettings', partialSettings).catch(error => {
+          console.warn('preload: ошибка синхронизации настройки с API handler:', error);
+        });
+      }
+      
       return result;
     }).catch(error => {
       console.error(`preload: ошибка обновления настройки ${key}:`, error);
-      throw error;
+      return { success: false, error: error.message };
     });
   },
   
@@ -147,6 +165,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     console.log('preload: сброс настроек');
     return ipcRenderer.invoke('settings:reset').then(result => {
       console.log('preload: результат сброса настроек:', result);
+      
+      // Дополнительно уведомляем API handler об изменениях
+      if (result.success) {
+        // Получаем дефолтные настройки и отправляем в API handler
+        const defaultSettings = {
+          model: 'claude-3-7-sonnet-20250219',
+          maxTokens: 4096,
+          temperature: 0.7,
+          topP: 1.0
+        };
+        ipcRenderer.invoke('api:updateSettings', defaultSettings).catch(error => {
+          console.warn('preload: ошибка синхронизации сброшенных настроек с API handler:', error);
+        });
+      }
+      
       return result;
     }).catch(error => {
       console.error('preload: ошибка сброса настроек:', error);
@@ -183,4 +216,4 @@ contextBridge.exposeInMainWorld('systemInfo', {
 
 // Debugging info
 console.log('Preload script executed successfully');
-console.log('electronAPI exposed with settings methods');
+console.log('electronAPI exposed with enhanced settings methods');
