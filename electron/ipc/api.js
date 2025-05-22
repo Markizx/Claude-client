@@ -19,6 +19,35 @@ class ClaudeAPIHandler {
     this.apiVersion = '2023-06-01';
     // Явно устанавливаем модель по умолчанию
     this.defaultModel = 'claude-3-7-sonnet-20250219';
+    
+    // Кешируем настройки для быстрого доступа
+    this.cachedSettings = {
+      model: 'claude-3-7-sonnet-20250219',
+      maxTokens: 4096,
+      temperature: 0.7,
+      topP: 1.0
+    };
+    
+    console.log('ClaudeAPIHandler инициализирован с настройками:', this.cachedSettings);
+  }
+
+  // Обновление кешированных настроек
+  updateSettings(newSettings) {
+    try {
+      if (newSettings && typeof newSettings === 'object') {
+        this.cachedSettings = {
+          ...this.cachedSettings,
+          ...newSettings
+        };
+        
+        // Всегда принудительно устанавливаем правильную модель
+        this.cachedSettings.model = 'claude-3-7-sonnet-20250219';
+        
+        console.log('ClaudeAPIHandler: обновлены настройки:', this.cachedSettings);
+      }
+    } catch (error) {
+      console.error('Ошибка обновления настроек в API handler:', error);
+    }
   }
 
   // Get API key
@@ -100,29 +129,27 @@ class ClaudeAPIHandler {
     }
   }
 
-  // Получение настроек из storageManager
+  // Получение настроек из кеша или из storageManager
   async getSettings() {
     try {
-      // Получаем все настройки через IPC от storageManager
+      // Пытаемся получить настройки из storageManager
       if (global.storageManager) {
-        return global.storageManager.getAllSettings();
+        const settings = global.storageManager.getAllSettings();
+        if (settings && Object.keys(settings).length > 0) {
+          // Обновляем кеш
+          this.updateSettings(settings);
+          console.log('ClaudeAPIHandler: настройки получены из storageManager:', settings);
+          return this.cachedSettings;
+        }
       }
       
-      // Fallback - настройки по умолчанию
-      return {
-        model: 'claude-3-7-sonnet-20250219',
-        maxTokens: 4096,
-        temperature: 0.7,
-        topP: 1.0
-      };
+      // Fallback на кешированные настройки
+      console.log('ClaudeAPIHandler: используем кешированные настройки:', this.cachedSettings);
+      return this.cachedSettings;
     } catch (error) {
       console.error('Error getting settings for API:', error);
-      return {
-        model: 'claude-3-7-sonnet-20250219',
-        maxTokens: 4096,
-        temperature: 0.7,
-        topP: 1.0
-      };
+      // Возвращаем кешированные настройки в случае ошибки
+      return this.cachedSettings;
     }
   }
 
@@ -247,11 +274,11 @@ class ClaudeAPIHandler {
 
 Всегда отвечай на русском языке, если не попросят иначе.`;
     
-    // Получаем настройки
+    // Получаем актуальные настройки
     const settings = await this.getSettings();
-    console.log('Используем настройки для API:', settings);
+    console.log('Используем настройки для API запроса:', settings);
     
-    // Используем настройки или значения по умолчанию
+    // Используем настройки из кеша
     const modelName = settings.model || this.defaultModel;
     const maxTokens = settings.maxTokens || 4096;
     const temperature = settings.temperature || 0.7;
@@ -259,7 +286,7 @@ class ClaudeAPIHandler {
     
     // Make API request to Claude
     try {
-      console.log(`Sending request to Claude API with model: ${modelName}`);
+      console.log(`Sending request to Claude API with model: ${modelName}, maxTokens: ${maxTokens}, temperature: ${temperature}, topP: ${topP}`);
       
       const requestData = {
         model: modelName,
@@ -304,6 +331,8 @@ class ClaudeAPIHandler {
           .map(item => item.text)
           .join('\n');
           
+        console.log('Получен ответ от Claude API, модель:', response.data.model);
+        
         return {
           id: response.data.id,
           content: textContent,
@@ -379,11 +408,23 @@ class ClaudeAPIHandler {
 // Создаем экземпляр обработчика
 const apiHandler = new ClaudeAPIHandler();
 
+// Сохраняем ссылку в global для доступа из других модулей
+global.apiHandler = apiHandler;
+
 // Функция для регистрации обработчиков IPC
 function register(ipcMainInstance, storageManagerRef = null) {
   // Сохраняем ссылку на storageManager для доступа к настройкам
   if (storageManagerRef) {
     global.storageManager = storageManagerRef;
+    
+    // Инициализируем настройки в API handler
+    try {
+      const settings = storageManagerRef.getAllSettings();
+      apiHandler.updateSettings(settings);
+      console.log('API handler инициализирован с настройками из storageManager');
+    } catch (error) {
+      console.error('Ошибка инициализации настроек в API handler:', error);
+    }
   }
 
   // API Key handling

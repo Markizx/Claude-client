@@ -52,7 +52,7 @@ const SettingsDialog = ({ open, onClose }) => {
   const [localSettings, setLocalSettings] = useState({
     // Основные настройки
     language: 'ru',
-    theme: 'light',
+    theme: 'dark',
     autoSave: true,
     confirmDelete: true,
     
@@ -84,8 +84,15 @@ const SettingsDialog = ({ open, onClose }) => {
   // Инициализация локальных настроек при открытии диалога
   useEffect(() => {
     if (open && settings && Object.keys(settings).length > 0 && !settingsLoading) {
-      console.log('Инициализируем локальные настройки:', settings);
-      setLocalSettings(prevLocal => ({ ...prevLocal, ...settings }));
+      console.log('SettingsDialog: Инициализируем локальные настройки:', settings);
+      
+      // Принудительно устанавливаем правильную модель
+      const settingsWithCorrectModel = {
+        ...settings,
+        model: 'claude-3-7-sonnet-20250219'
+      };
+      
+      setLocalSettings(prevLocal => ({ ...prevLocal, ...settingsWithCorrectModel }));
       setError(null);
       setSuccess(false);
     }
@@ -105,7 +112,14 @@ const SettingsDialog = ({ open, onClose }) => {
   };
 
   const handleInputChange = (field, value) => {
-    console.log(`Изменение поля ${field}:`, value);
+    console.log(`SettingsDialog: Изменение поля ${field}:`, value);
+    
+    // Специальная обработка для модели - всегда устанавливаем правильную
+    if (field === 'model') {
+      value = 'claude-3-7-sonnet-20250219';
+      console.log('SettingsDialog: Принудительно установлена модель claude-3-7-sonnet-20250219');
+    }
+    
     setLocalSettings(prev => ({
       ...prev,
       [field]: value
@@ -138,20 +152,33 @@ const SettingsDialog = ({ open, onClose }) => {
         return;
       }
       
-      console.log('Сохраняем настройки:', localSettings);
+      // Принудительно устанавливаем правильную модель перед сохранением
+      const settingsToSave = {
+        ...localSettings,
+        model: 'claude-3-7-sonnet-20250219'
+      };
       
-      const success = await updateSettings(localSettings);
+      console.log('SettingsDialog: Сохраняем настройки:', settingsToSave);
+      
+      const success = await updateSettings(settingsToSave);
       
       if (success) {
         setSuccess(true);
         setTimeout(() => setSuccess(false), 3000);
-        console.log('Настройки успешно сохранены');
+        console.log('SettingsDialog: Настройки успешно сохранены');
+        
+        // Дополнительная проверка - обновляем локальные настройки с правильной моделью
+        setLocalSettings(prevSettings => ({
+          ...prevSettings,
+          model: 'claude-3-7-sonnet-20250219'
+        }));
+        
       } else {
         setError('Не удалось сохранить настройки');
-        console.error('Не удалось сохранить настройки');
+        console.error('SettingsDialog: Не удалось сохранить настройки');
       }
     } catch (err) {
-      console.error('Ошибка при сохранении настроек:', err);
+      console.error('SettingsDialog: Ошибка при сохранении настроек:', err);
       setError(`Ошибка сохранения настроек: ${err.message}`);
     } finally {
       setLoading(false);
@@ -172,14 +199,14 @@ const SettingsDialog = ({ open, onClose }) => {
         return;
       }
       
-      console.log('Сбрасываем настройки');
+      console.log('SettingsDialog: Сбрасываем настройки');
       const success = await resetSettings();
       
       if (success) {
         // Сбрасываем локальные настройки к значениям по умолчанию
         const defaultSettings = {
           language: 'ru',
-          theme: 'light',
+          theme: 'dark',
           autoSave: true,
           confirmDelete: true,
           model: 'claude-3-7-sonnet-20250219',
@@ -200,13 +227,13 @@ const SettingsDialog = ({ open, onClose }) => {
         setLocalSettings(defaultSettings);
         setSuccess(true);
         setTimeout(() => setSuccess(false), 3000);
-        console.log('Настройки сброшены к значениям по умолчанию');
+        console.log('SettingsDialog: Настройки сброшены к значениям по умолчанию');
       } else {
         setError('Не удалось сбросить настройки');
-        console.error('Не удалось сбросить настройки');
+        console.error('SettingsDialog: Не удалось сбросить настройки');
       }
     } catch (err) {
-      console.error('Ошибка при сбросе настроек:', err);
+      console.error('SettingsDialog: Ошибка при сбросе настроек:', err);
       setError(`Ошибка сброса настроек: ${err.message}`);
     } finally {
       setLoading(false);
@@ -286,13 +313,9 @@ const SettingsDialog = ({ open, onClose }) => {
     onClose();
   };
 
-  // Доступные модели Claude
+  // Доступные модели Claude - показываем только правильную
   const availableModels = [
     { value: 'claude-3-7-sonnet-20250219', label: 'Claude 3.7 Sonnet (рекомендуется)' },
-    { value: 'claude-3-5-sonnet-20240620', label: 'Claude 3.5 Sonnet' },
-    { value: 'claude-3-opus-20240229', label: 'Claude 3 Opus' },
-    { value: 'claude-3-sonnet-20240229', label: 'Claude 3 Sonnet' },
-    { value: 'claude-3-haiku-20240307', label: 'Claude 3 Haiku' },
   ];
 
   return (
@@ -369,7 +392,7 @@ const SettingsDialog = ({ open, onClose }) => {
               <InputLabel id="theme-label">Тема</InputLabel>
               <Select
                 labelId="theme-label"
-                value={localSettings.theme || 'light'}
+                value={localSettings.theme || 'dark'}
                 label="Тема"
                 onChange={handleSelectChange('theme')}
               >
@@ -404,12 +427,17 @@ const SettingsDialog = ({ open, onClose }) => {
         {/* Настройки AI */}
         <TabPanel value={activeTab} index={1}>
           <Box sx={{ space: 3 }}>
+            <Alert severity="info" sx={{ mb: 3 }}>
+              Используется модель Claude 3.7 Sonnet для лучшего качества ответов
+            </Alert>
+            
             <FormControl fullWidth sx={{ mb: 3 }}>
               <InputLabel id="model-label">Модель</InputLabel>
               <Select
                 labelId="model-label"
-                value={localSettings.model || 'claude-3-7-sonnet-20250219'}
+                value="claude-3-7-sonnet-20250219"
                 label="Модель"
+                disabled={true}
                 onChange={handleSelectChange('model')}
               >
                 {availableModels.map(model => (

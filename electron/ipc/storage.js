@@ -14,7 +14,7 @@ class SettingsStore {
       defaults: {
         // Основные настройки
         language: 'ru',
-        theme: 'light',
+        theme: 'dark',
         autoSave: true,
         confirmDelete: true,
         
@@ -55,7 +55,7 @@ class SettingsStore {
         settings.model = 'claude-3-7-sonnet-20250219';
       }
       
-      console.log('Загружены настройки:', settings);
+      console.log('SettingsStore: Загружены настройки:', settings);
       return settings;
     } catch (error) {
       console.error('Ошибка загрузки настроек:', error);
@@ -90,7 +90,13 @@ class SettingsStore {
       this.store.clear();
       this.store.set(cleanSettings);
       
-      console.log('Настройки успешно сохранены:', cleanSettings);
+      console.log('SettingsStore: Настройки успешно сохранены:', cleanSettings);
+      
+      // Уведомляем API handler об изменении настроек
+      if (global.apiHandler) {
+        global.apiHandler.updateSettings(cleanSettings);
+      }
+      
       return true;
     } catch (error) {
       console.error('Ошибка сохранения настроек:', error);
@@ -107,7 +113,14 @@ class SettingsStore {
       const cleanValue = value === null || value === undefined ? '' : value;
       
       this.store.set(key, cleanValue);
-      console.log(`Настройка обновлена: ${key} = ${cleanValue}`);
+      console.log(`SettingsStore: Настройка обновлена: ${key} = ${cleanValue}`);
+      
+      // Уведомляем API handler об изменении настроек
+      if (global.apiHandler) {
+        const allSettings = this.getAllSettings();
+        global.apiHandler.updateSettings(allSettings);
+      }
+      
       return true;
     } catch (error) {
       console.error(`Ошибка обновления настройки ${key}:`, error);
@@ -131,7 +144,13 @@ class SettingsStore {
       this.store.clear();
       // Устанавливаем дефолтные значения
       this.store.set(this.store.defaults);
-      console.log('Настройки сброшены к значениям по умолчанию');
+      console.log('SettingsStore: Настройки сброшены к значениям по умолчанию');
+      
+      // Уведомляем API handler об изменении настроек
+      if (global.apiHandler) {
+        global.apiHandler.updateSettings(this.store.defaults);
+      }
+      
       return true;
     } catch (error) {
       console.error('Ошибка сброса настроек:', error);

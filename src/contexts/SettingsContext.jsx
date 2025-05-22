@@ -13,7 +13,7 @@ export const useSettings = () => {
 const defaultSettings = {
   // Основные настройки
   language: 'ru',
-  theme: 'light',
+  theme: 'dark',
   autoSave: true,
   confirmDelete: true,
   
@@ -55,8 +55,10 @@ export const SettingsProvider = ({ children }) => {
       attempts++;
     }
     
-    setApiReady(!!window.electronAPI);
-    return !!window.electronAPI;
+    const hasAPI = !!window.electronAPI;
+    setApiReady(hasAPI);
+    console.log('SettingsContext: electronAPI ready:', hasAPI);
+    return hasAPI;
   }, []);
 
   // Загрузка настроек при инициализации
@@ -65,42 +67,56 @@ export const SettingsProvider = ({ children }) => {
       setLoading(true);
       setError(null);
       
-      console.log('Начинаем загрузку настроек...');
+      console.log('SettingsContext: Начинаем загрузку настроек...');
       
       // Ждем доступности electronAPI
       const hasAPI = await waitForElectronAPI();
       
       if (!hasAPI) {
-        console.warn('electronAPI не доступен, используем дефолтные настройки');
+        console.warn('SettingsContext: electronAPI не доступен, используем дефолтные настройки');
         setSettings(defaultSettings);
+        applyTheme(defaultSettings.theme);
         return;
       }
       
-      console.log('electronAPI доступен, загружаем настройки...');
+      console.log('SettingsContext: electronAPI доступен, загружаем настройки...');
       const savedSettings = await window.electronAPI.getSettings();
       
-      console.log('Полученные настройки:', savedSettings);
+      console.log('SettingsContext: Полученные настройки:', savedSettings);
       
-      if (savedSettings && typeof savedSettings === 'object') {
+      if (savedSettings && typeof savedSettings === 'object' && Object.keys(savedSettings).length > 0) {
         // Мерджим с дефолтными настройками
         const mergedSettings = { ...defaultSettings, ...savedSettings };
         
         // Принудительно устанавливаем правильную модель
         if (!mergedSettings.model || mergedSettings.model !== 'claude-3-7-sonnet-20250219') {
           mergedSettings.model = 'claude-3-7-sonnet-20250219';
+          console.log('SettingsContext: Принудительно установлена модель claude-3-7-sonnet-20250219');
         }
         
         setSettings(mergedSettings);
         applyTheme(mergedSettings.theme);
         
-        console.log('Настройки успешно загружены и применены:', mergedSettings);
+        console.log('SettingsContext: Настройки успешно загружены и применены:', mergedSettings);
+        
+        // Уведомляем API handler об обновлении настроек если он доступен
+        notifyAPIHandlerSettingsUpdate(mergedSettings);
       } else {
-        console.log('Настройки не найдены, используем дефолтные');
+        console.log('SettingsContext: Настройки не найдены или пусты, используем дефолтные');
         setSettings(defaultSettings);
         applyTheme(defaultSettings.theme);
+        
+        // Сохраняем дефолтные настройки
+        try {
+          await window.electronAPI.updateSettings(defaultSettings);
+          console.log('SettingsContext: Дефолтные настройки сохранены');
+          notifyAPIHandlerSettingsUpdate(defaultSettings);
+        } catch (saveError) {
+          console.error('SettingsContext: Ошибка сохранения дефолтных настроек:', saveError);
+        }
       }
     } catch (err) {
-      console.error('Ошибка загрузки настроек:', err);
+      console.error('SettingsContext: Ошибка загрузки настроек:', err);
       setError('Ошибка загрузки настроек: ' + (err.message || err));
       setSettings(defaultSettings);
       applyTheme(defaultSettings.theme);
@@ -109,15 +125,39 @@ export const SettingsProvider = ({ children }) => {
     }
   }, [waitForElectronAPI]);
 
+  // Уведомление API handler об изменении настроек
+  const notifyAPIHandlerSettingsUpdate = useCallback((newSettings) => {
+    try {
+      // Создаем специальное сообщение для передачи настроек в main process
+      if (window.electronAPI && window.electronAPI.updateSetting) {
+        // Передаем настройки через специальный канал
+        console.log('SettingsContext: Уведомляем API handler о новых настройках');
+        
+        // Отправляем каждую настройку отдельно для надежности
+        const criticalSettings = ['model', 'maxTokens', 'temperature', 'topP'];
+        criticalSettings.forEach(key => {
+          if (newSettings[key] !== undefined) {
+            window.electronAPI.updateSetting(key, newSettings[key]).catch(err => {
+              console.error(`SettingsContext: Ошибка обновления настройки ${key}:`, err);
+            });
+          }
+        });
+      }
+    } catch (err) {
+      console.error('SettingsContext: Ошибка уведомления API handler:', err);
+    }
+  }, []);
+
   // Сохранение всех настроек
   const updateSettings = useCallback(async (newSettings) => {
     try {
       setError(null);
       
-      console.log('Обновляем настройки:', newSettings);
+      console.log('SettingsContext: Обновляем настройки:', newSettings);
       
       if (!apiReady) {
-        console.warn('electronAPI не готов');
+        console.warn('SettingsContext: electronAPI не готов');
+        setError('API не готов. Подождите и попробуйте снова.');
         return false;
       }
       
@@ -127,44 +167,48 @@ export const SettingsProvider = ({ children }) => {
       // Принудительно устанавливаем правильную модель
       mergedSettings.model = 'claude-3-7-sonnet-20250219';
       
-      console.log('Сохраняем настройки через electronAPI:', mergedSettings);
+      console.log('SettingsContext: Сохраняем настройки через electronAPI:', mergedSettings);
       
       const result = await window.electronAPI.updateSettings(mergedSettings);
       
-      console.log('Результат сохранения:', result);
+      console.log('SettingsContext: Результат сохранения:', result);
       
       if (result && result.success) {
         setSettings(mergedSettings);
         applyTheme(mergedSettings.theme);
         
-        console.log('Настройки успешно сохранены и применены');
+        // Уведомляем API handler
+        notifyAPIHandlerSettingsUpdate(mergedSettings);
+        
+        console.log('SettingsContext: Настройки успешно сохранены и применены');
         return true;
       } else {
         const errorMsg = result?.error || 'Неизвестная ошибка при сохранении';
         setError(errorMsg);
-        console.error('Ошибка при сохранении настроек:', errorMsg);
+        console.error('SettingsContext: Ошибка при сохранении настроек:', errorMsg);
         return false;
       }
     } catch (err) {
-      console.error('Ошибка сохранения настроек:', err);
+      console.error('SettingsContext: Ошибка сохранения настроек:', err);
       setError('Ошибка сохранения настроек: ' + (err.message || err));
       return false;
     }
-  }, [settings, apiReady]);
+  }, [settings, apiReady, notifyAPIHandlerSettingsUpdate]);
 
   // Обновление одной настройки
   const updateSetting = useCallback(async (key, value) => {
     try {
-      console.log(`Обновляем настройку ${key}:`, value);
+      console.log(`SettingsContext: Обновляем настройку ${key}:`, value);
       
       if (!apiReady) {
-        console.warn('electronAPI не готов');
+        console.warn('SettingsContext: electronAPI не готов');
+        setError('API не готов. Подождите и попробуйте снова.');
         return false;
       }
       
       const result = await window.electronAPI.updateSetting(key, value);
       
-      console.log(`Результат обновления настройки ${key}:`, result);
+      console.log(`SettingsContext: Результат обновления настройки ${key}:`, result);
       
       if (result && result.success) {
         setSettings(prev => {
@@ -175,62 +219,75 @@ export const SettingsProvider = ({ children }) => {
             applyTheme(value);
           }
           
-          console.log('Настройки в состоянии обновлены:', updated);
+          // Уведомляем API handler о критических настройках
+          const criticalSettings = ['model', 'maxTokens', 'temperature', 'topP'];
+          if (criticalSettings.includes(key)) {
+            notifyAPIHandlerSettingsUpdate(updated);
+          }
+          
+          console.log('SettingsContext: Настройки в состоянии обновлены:', updated);
           return updated;
         });
         return true;
       }
       
-      console.error(`Ошибка обновления настройки ${key}:`, result);
+      console.error(`SettingsContext: Ошибка обновления настройки ${key}:`, result);
+      setError(`Ошибка обновления настройки ${key}`);
       return false;
     } catch (error) {
-      console.error(`Ошибка обновления настройки ${key}:`, error);
+      console.error(`SettingsContext: Ошибка обновления настройки ${key}:`, error);
       setError(`Ошибка обновления настройки ${key}: ${error.message}`);
       return false;
     }
-  }, [apiReady]);
+  }, [apiReady, notifyAPIHandlerSettingsUpdate]);
 
   // Сброс настроек к значениям по умолчанию
   const resetSettings = useCallback(async () => {
     try {
-      console.log('Сбрасываем настройки к значениям по умолчанию');
+      console.log('SettingsContext: Сбрасываем настройки к значениям по умолчанию');
       
       if (!apiReady) {
-        console.warn('electronAPI не готов');
+        console.warn('SettingsContext: electronAPI не готов');
+        setError('API не готов. Подождите и попробуйте снова.');
         return false;
       }
       
       const result = await window.electronAPI.resetSettings();
-      console.log('Результат сброса настроек:', result);
+      console.log('SettingsContext: Результат сброса настроек:', result);
       
       if (result && result.success) {
         setSettings(defaultSettings);
         applyTheme(defaultSettings.theme);
+        
+        // Уведомляем API handler
+        notifyAPIHandlerSettingsUpdate(defaultSettings);
+        
+        console.log('SettingsContext: Настройки сброшены к значениям по умолчанию');
         return true;
       } else {
         setError('Ошибка сброса настроек');
         return false;
       }
     } catch (err) {
-      console.error('Ошибка сброса настроек:', err);
+      console.error('SettingsContext: Ошибка сброса настроек:', err);
       setError('Ошибка сброса настроек: ' + (err.message || err));
       return false;
     }
-  }, [apiReady]);
+  }, [apiReady, notifyAPIHandlerSettingsUpdate]);
 
   // Функция для применения темы
   const applyTheme = useCallback((theme) => {
-    console.log('Применяем тему:', theme);
+    console.log('SettingsContext: Применяем тему:', theme);
     
     if (!theme || theme === 'auto') {
       // Автоматический выбор в зависимости от системных предпочтений
       const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
       const appliedTheme = prefersDark ? 'dark' : 'light';
       document.documentElement.setAttribute('data-theme', appliedTheme);
-      console.log('Применена автоматическая тема:', appliedTheme);
+      console.log('SettingsContext: Применена автоматическая тема:', appliedTheme);
     } else {
       document.documentElement.setAttribute('data-theme', theme);
-      console.log('Применена тема:', theme);
+      console.log('SettingsContext: Применена тема:', theme);
     }
   }, []);
 
@@ -294,6 +351,17 @@ export const SettingsProvider = ({ children }) => {
       }
     };
   }, [settings.theme, applyTheme]);
+
+  // Дополнительный эффект для мониторинга изменений критических настроек
+  useEffect(() => {
+    const criticalSettings = ['model', 'maxTokens', 'temperature', 'topP'];
+    const hasCriticalChanges = criticalSettings.some(key => settings[key] !== undefined);
+    
+    if (hasCriticalChanges && !loading && apiReady) {
+      console.log('SettingsContext: Обнаружены изменения критических настроек, уведомляем API handler');
+      notifyAPIHandlerSettingsUpdate(settings);
+    }
+  }, [settings.model, settings.maxTokens, settings.temperature, settings.topP, loading, apiReady, notifyAPIHandlerSettingsUpdate]);
 
   const value = {
     settings,
