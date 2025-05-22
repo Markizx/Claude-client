@@ -50,55 +50,76 @@ export const SettingsProvider = ({ children }) => {
       setLoading(true);
       setError(null);
       
+      // Ждем доступности electronAPI
+      let attempts = 0;
+      const maxAttempts = 50; // 5 секунд ожидания
+      
+      while (!window.electronAPI && attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        attempts++;
+      }
+      
       if (window.electronAPI && window.electronAPI.getSettings) {
-        // Задержка для уверенности, что electronAPI загрузился
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        const savedSettings = await window.electronAPI.getSettings();
-        
-        if (savedSettings && typeof savedSettings === 'object') {
-          // Мерджим с дефолтными настройками
-          setSettings(prevSettings => ({
-            ...prevSettings,
-            ...savedSettings
-          }));
+        try {
+          const savedSettings = await window.electronAPI.getSettings();
           
-          // Принудительно устанавливаем модель по умолчанию
-          if (!savedSettings.model || savedSettings.model !== 'claude-3-7-sonnet-20250219') {
-            updateSetting('model', 'claude-3-7-sonnet-20250219');
-          }
-          
-          // Применяем тему
-          applyTheme(savedSettings.theme || prevSettings.theme);
-        } else {
-          // Если сохраненные настройки не найдены, сохраняем дефолтные
-          await updateSettings(defaultSettings);
-        }
-      } else {
-        // Пробуем загрузить из localStorage для веб-версии
-        const stored = localStorage.getItem('claude-desktop-settings');
-        if (stored) {
-          try {
-            const parsedSettings = JSON.parse(stored);
-            setSettings(prevSettings => ({
-              ...prevSettings,
-              ...parsedSettings
-            }));
+          if (savedSettings && typeof savedSettings === 'object') {
+            // Мерджим с дефолтными настройками
+            const mergedSettings = {
+              ...defaultSettings,
+              ...savedSettings
+            };
+            
+            setSettings(mergedSettings);
             
             // Применяем тему
-            applyTheme(parsedSettings.theme || prevSettings.theme);
-          } catch (e) {
-            console.error('Error parsing settings from localStorage:', e);
+            applyTheme(mergedSettings.theme);
+            
+            console.log('Настройки загружены:', mergedSettings);
+          } else {
+            // Если сохраненные настройки не найдены, сохраняем дефолтные
+            console.log('Настройки не найдены, используем дефолтные');
+            setSettings(defaultSettings);
+            applyTheme(defaultSettings.theme);
+            await updateSettings(defaultSettings);
           }
-        } else {
-          // Если настройки не найдены, инициализируем дефолтными
-          localStorage.setItem('claude-desktop-settings', JSON.stringify(defaultSettings));
+        } catch (settingsError) {
+          console.error('Ошибка загрузки настроек из API:', settingsError);
           setSettings(defaultSettings);
+          applyTheme(defaultSettings.theme);
+        }
+      } else {
+        // Пробуем загрузить из localStorage для веб-версии или если API недоступен
+        try {
+          const stored = localStorage.getItem('claude-desktop-settings');
+          if (stored) {
+            const parsedSettings = JSON.parse(stored);
+            const mergedSettings = {
+              ...defaultSettings,
+              ...parsedSettings
+            };
+            setSettings(mergedSettings);
+            applyTheme(mergedSettings.theme);
+            console.log('Настройки загружены из localStorage:', mergedSettings);
+          } else {
+            // Если настройки не найдены, инициализируем дефолтными
+            localStorage.setItem('claude-desktop-settings', JSON.stringify(defaultSettings));
+            setSettings(defaultSettings);
+            applyTheme(defaultSettings.theme);
+            console.log('Инициализированы дефолтные настройки');
+          }
+        } catch (localStorageError) {
+          console.error('Ошибка работы с localStorage:', localStorageError);
+          setSettings(defaultSettings);
+          applyTheme(defaultSettings.theme);
         }
       }
     } catch (err) {
       console.error('Ошибка загрузки настроек:', err);
       setError('Ошибка загрузки настроек: ' + (err.message || err));
+      // В случае ошибки используем дефолтные настройки
+      setSettings(defaultSettings);
+      applyTheme(defaultSettings.theme);
     } finally {
       setLoading(false);
     }
@@ -109,44 +130,56 @@ export const SettingsProvider = ({ children }) => {
     try {
       setError(null);
       
-      // Проверяем наличие null/undefined значений и заменяем их пустой строкой
+      // Проверяем наличие null/undefined значений и заменяем их дефолтными
       const cleanSettings = {};
       for (const [key, value] of Object.entries({...settings, ...newSettings})) {
-        cleanSettings[key] = value === null || value === undefined ? '' : value;
+        if (value === null || value === undefined) {
+          cleanSettings[key] = defaultSettings[key] || '';
+        } else {
+          cleanSettings[key] = value;
+        }
       }
 
-      // Всегда устанавливаем правильную модель
-      cleanSettings.model = cleanSettings.model || 'claude-3-7-sonnet-20250219';
+      // Всегда устанавливаем правильную модель если её нет
+      if (!cleanSettings.model) {
+        cleanSettings.model = defaultSettings.model;
+      }
 
+      console.log('Сохраняем настройки:', cleanSettings);
+
+      // Сначала обновляем локальное состояние
+      setSettings(cleanSettings);
+      
+      // Применяем тему
+      applyTheme(cleanSettings.theme);
+
+      // Сохраняем через API если доступно
       if (window.electronAPI && window.electronAPI.updateSettings) {
-        // Задержка для уверенности, что electronAPI загрузился
-        await new Promise(resolve => setTimeout(resolve, 300));
-        
-        const result = await window.electronAPI.updateSettings(cleanSettings);
-        
-        if (result && result.success) {
-          setSettings(cleanSettings);
+        try {
+          const result = await window.electronAPI.updateSettings(cleanSettings);
           
-          // Применяем тему
-          applyTheme(cleanSettings.theme);
-          
-          return true;
-        } else if (result && result.error) {
-          setError(result.error);
-          return false;
+          if (result && result.success) {
+            console.log('Настройки успешно сохранены через API');
+            return true;
+          } else {
+            console.error('API вернул ошибку при сохранении настроек:', result?.error);
+            // Продолжаем выполнение, так как локально настройки уже обновлены
+          }
+        } catch (apiError) {
+          console.error('Ошибка сохранения настроек через API:', apiError);
+          // Продолжаем выполнение, так как локально настройки уже обновлены
         }
-      } else {
-        // Сохраняем в localStorage для веб-версии
-        localStorage.setItem('claude-desktop-settings', JSON.stringify(cleanSettings));
-        setSettings(cleanSettings);
-        
-        // Применяем тему
-        applyTheme(cleanSettings.theme);
-        
-        return true;
       }
       
-      return false;
+      // Сохраняем в localStorage как fallback
+      try {
+        localStorage.setItem('claude-desktop-settings', JSON.stringify(cleanSettings));
+        console.log('Настройки сохранены в localStorage');
+      } catch (localStorageError) {
+        console.error('Ошибка сохранения в localStorage:', localStorageError);
+      }
+      
+      return true;
     } catch (err) {
       console.error('Ошибка сохранения настроек:', err);
       setError('Ошибка сохранения настроек: ' + (err.message || err));
@@ -156,74 +189,63 @@ export const SettingsProvider = ({ children }) => {
 
   // Обновление одной настройки
   const updateSetting = useCallback(async (key, value) => {
-    // Проверяем наличие null/undefined значений
-    const safeValue = value === null || value === undefined ? '' : value;
+    console.log(`Обновляем настройку ${key}:`, value);
     
-    if (window.electronAPI && window.electronAPI.updateSetting) {
-      try {
-        // Задержка для уверенности, что electronAPI загрузился
-        await new Promise(resolve => setTimeout(resolve, 300));
-        
-        const result = await window.electronAPI.updateSetting(key, safeValue);
-        if (result && result.success) {
-          setSettings(prev => {
-            const updated = { ...prev, [key]: safeValue };
-            
-            // Если обновили тему, применяем её
-            if (key === 'theme') {
-              applyTheme(safeValue);
-            }
-            
-            return updated;
-          });
-          return true;
-        }
-        return false;
-      } catch (error) {
-        console.error(`Ошибка обновления настройки ${key}:`, error);
-        return false;
+    // Проверяем наличие null/undefined значений
+    const safeValue = value === null || value === undefined ? (defaultSettings[key] || '') : value;
+    
+    try {
+      // Обновляем локально
+      const updatedSettings = { ...settings, [key]: safeValue };
+      
+      // Если обновили тему, применяем её сразу
+      if (key === 'theme') {
+        applyTheme(safeValue);
       }
-    } else {
+      
+      // Используем общую функцию обновления настроек
       return await updateSettings({ [key]: safeValue });
+    } catch (error) {
+      console.error(`Ошибка обновления настройки ${key}:`, error);
+      setError(`Ошибка обновления настройки ${key}: ${error.message}`);
+      return false;
     }
-  }, [updateSettings]);
+  }, [settings, updateSettings]);
 
   // Сброс настроек к значениям по умолчанию
   const resetSettings = useCallback(async () => {
     try {
-      await updateSettings(defaultSettings);
-      return true;
+      console.log('Сбрасываем настройки к дефолтным');
+      return await updateSettings(defaultSettings);
     } catch (err) {
       console.error('Ошибка сброса настроек:', err);
+      setError('Ошибка сброса настроек: ' + (err.message || err));
       return false;
     }
   }, [updateSettings]);
 
   // Функция для применения темы
-  const applyTheme = (theme) => {
-    if (!theme || theme === 'auto') {
-      // Автоматический выбор в зависимости от системных предпочтений
-      const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-      document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
-    } else {
-      document.documentElement.setAttribute('data-theme', theme);
+  const applyTheme = useCallback((theme) => {
+    try {
+      if (!theme || theme === 'auto') {
+        // Автоматический выбор в зависимости от системных предпочтений
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+        console.log('Применена автоматическая тема:', prefersDark ? 'dark' : 'light');
+      } else {
+        document.documentElement.setAttribute('data-theme', theme);
+        console.log('Применена тема:', theme);
+      }
+    } catch (themeError) {
+      console.error('Ошибка применения темы:', themeError);
     }
-  };
+  }, []);
 
   // Загружаем настройки при монтировании
   useEffect(() => {
     let mounted = true;
     
     const loadWithDelay = async () => {
-      // Ждем доступности electronAPI
-      let attempts = 0;
-      const maxAttempts = 50; // 5 секунд ожидания
-      
-      while (attempts < maxAttempts && !window.electronAPI && mounted) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        attempts++;
-      }
-      
       if (mounted) {
         await loadSettings();
       }
@@ -232,30 +254,44 @@ export const SettingsProvider = ({ children }) => {
     loadWithDelay();
 
     // Добавляем слушатель для изменений системной темы
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleChange = () => {
+    const handleSystemThemeChange = () => {
       if (settings.theme === 'auto' && mounted) {
         applyTheme('auto');
       }
     };
 
-    if (mediaQuery.addEventListener) {
-      mediaQuery.addEventListener('change', handleChange);
-    } else {
-      // Для старых браузеров
-      mediaQuery.addListener(handleChange);
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    
+    try {
+      if (mediaQuery.addEventListener) {
+        mediaQuery.addEventListener('change', handleSystemThemeChange);
+      } else {
+        // Для старых браузеров
+        mediaQuery.addListener(handleSystemThemeChange);
+      }
+    } catch (listenerError) {
+      console.error('Ошибка установки слушателя темы:', listenerError);
     }
 
     return () => {
       mounted = false;
-      if (mediaQuery.removeEventListener) {
-        mediaQuery.removeEventListener('change', handleChange);
-      } else {
-        // Для старых браузеров
-        mediaQuery.removeListener(handleChange);
+      try {
+        if (mediaQuery.removeEventListener) {
+          mediaQuery.removeEventListener('change', handleSystemThemeChange);
+        } else {
+          // Для старых браузеров
+          mediaQuery.removeListener(handleSystemThemeChange);
+        }
+      } catch (listenerError) {
+        console.error('Ошибка удаления слушателя темы:', listenerError);
       }
     };
-  }, [loadSettings, settings.theme]);
+  }, [loadSettings, settings.theme, applyTheme]);
+
+  // Очистка ошибки
+  const clearError = useCallback(() => {
+    setError(null);
+  }, []);
 
   const value = {
     settings,
@@ -264,7 +300,7 @@ export const SettingsProvider = ({ children }) => {
     resetSettings,
     loading,
     error,
-    setError,
+    setError: clearError,
   };
 
   return (

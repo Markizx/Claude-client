@@ -100,6 +100,63 @@ class ClaudeAPIHandler {
     }
   }
 
+  // Get current settings
+  async getSettings() {
+    try {
+      const settingsStore = new Store({ name: 'claude-desktop-settings' });
+      let settings = settingsStore.get('settings');
+      
+      // Если настройки не найдены в объекте settings, пытаемся получить их напрямую
+      if (!settings || typeof settings !== 'object') {
+        settings = settingsStore.store || {};
+      }
+      
+      // Возвращаем настройки с значениями по умолчанию
+      const defaultSettings = {
+        language: 'ru',
+        theme: 'light',
+        autoSave: true,
+        confirmDelete: true,
+        model: 'claude-3-7-sonnet-20250219',
+        maxTokens: 4096,
+        temperature: 0.7,
+        topP: 1.0,
+        messageAnimation: true,
+        compactMode: false,
+        showTimestamps: true,
+        fontSize: 14,
+        soundEnabled: true,
+        desktopNotifications: true,
+        autoBackup: false,
+        backupInterval: 24,
+        maxBackups: 10,
+      };
+      
+      return { ...defaultSettings, ...settings };
+    } catch (error) {
+      console.error('Error getting settings:', error);
+      return {
+        language: 'ru',
+        theme: 'light',
+        autoSave: true,
+        confirmDelete: true,
+        model: 'claude-3-7-sonnet-20250219',
+        maxTokens: 4096,
+        temperature: 0.7,
+        topP: 1.0,
+        messageAnimation: true,
+        compactMode: false,
+        showTimestamps: true,
+        fontSize: 14,
+        soundEnabled: true,
+        desktopNotifications: true,
+        autoBackup: false,
+        backupInterval: 24,
+        maxBackups: 10,
+      };
+    }
+  }
+
   // Send message to Claude API
   async sendMessageToClaudeAI(content, attachments = [], history = []) {
     const apiKey = await this.getApiKey();
@@ -108,12 +165,70 @@ class ClaudeAPIHandler {
       throw new Error('Claude API key is not configured. Please update your settings.');
     }
 
+    // Получаем текущие настройки
+    const settings = await this.getSettings();
+
     // Prepare message content array
     const messageContent = [];
     
-    // Add attachments to the message
-    if (attachments && attachments.length > 0) {
-      for (const attachment of attachments) {
+    // Добавляем контекст файлов проекта в начало, если есть
+    const projectFiles = attachments.filter(att => att.isProjectFile);
+    const regularFiles = attachments.filter(att => !att.isProjectFile);
+    
+    if (projectFiles.length > 0) {
+      messageContent.push({
+        type: 'text',
+        text: '=== КОНТЕКСТ ПРОЕКТА ==='
+      });
+      
+      for (const projectFile of projectFiles) {
+        try {
+          if (!projectFile.path || !fs.existsSync(projectFile.path)) {
+            console.warn(`Project file not found: ${projectFile.path}`);
+            continue;
+          }
+          
+          const fileBuffer = fs.readFileSync(projectFile.path);
+          const mediaType = this.getMediaType(projectFile.type, projectFile.name);
+          
+          if (this.isImageFile(mediaType)) {
+            messageContent.push({
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: mediaType,
+                data: fileBuffer.toString('base64')
+              }
+            });
+          } else {
+            try {
+              const textContent = fileBuffer.toString('utf8');
+              messageContent.push({
+                type: 'text',
+                text: `### Файл проекта: ${projectFile.name} ###\n\n${textContent}\n\n### Конец файла ###`
+              });
+            } catch (error) {
+              console.error(`Error reading project file ${projectFile.name}:`, error);
+              messageContent.push({
+                type: 'text',
+                text: `[Файл проекта: ${projectFile.name}, тип: ${mediaType}, размер: ${fileBuffer.length} байт - не удалось прочитать как текст]`
+              });
+            }
+          }
+        } catch (fileError) {
+          console.error(`Error processing project file ${projectFile.name}:`, fileError);
+        }
+      }
+      
+      messageContent.push({
+        type: 'text',
+        text: '=== КОНЕЦ КОНТЕКСТА ПРОЕКТА ===\n\n'
+      });
+    }
+    
+    // Add regular attachments to the message
+    if (regularFiles && regularFiles.length > 0) {
+      for (const attachment of regularFiles) {
         try {
           // Read the file
           if (!attachment.path || !fs.existsSync(attachment.path)) {
@@ -207,7 +322,9 @@ class ClaudeAPIHandler {
     });
     
     // Системное сообщение
-    const systemPrompt = `Ты полезный ассистент Claude. Если пользователь прикрепил файлы, анализируй их содержимое и отвечай на основе этих данных. 
+    const systemPrompt = `Ты полезный ассистент Claude. Если пользователь прикрепил файлы, анализируй их содержимое и отвечай на основе этих данных.
+
+${projectFiles.length > 0 ? 'ВАЖНО: В начале сообщения приведен контекст проекта - это файлы проекта, которые пользователь выбрал для контекста. Используй эту информацию при ответе.' : ''}
 
 Правила для артефактов:
 - Используй тег <artifact> для создания кода, документов и визуализаций
@@ -221,21 +338,7 @@ class ClaudeAPIHandler {
 
 Всегда отвечай на русском языке, если не попросят иначе.`;
     
-    // Получаем настройки модели
-    const settingsStore = new Store({ name: 'claude-desktop-settings' });
-    let settings = settingsStore.get('settings') || {};
-    
-    // Важное исправление: получаем настройки напрямую, если они не вложены в объект 'settings'
-    if (!settings.model) {
-      try {
-        settings = settingsStore.get('') || {};
-      } catch (error) {
-        console.error('Error getting direct settings:', error);
-      }
-    }
-    
-    // Используем настройки или значения по умолчанию
-    // Принудительно используем правильную модель, если настройки не найдены
+    // Используем настройки из контекста
     const modelName = settings.model || this.defaultModel;
     const maxTokens = settings.maxTokens || 4096;
     const temperature = settings.temperature || 0.7;

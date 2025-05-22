@@ -18,14 +18,16 @@ class SettingsStore {
     try {
       if (fs.existsSync(this.settingsPath)) {
         const data = fs.readFileSync(this.settingsPath, 'utf8');
-        return JSON.parse(data);
+        const settings = JSON.parse(data);
+        console.log('Настройки загружены из файла:', settings);
+        return settings;
       }
     } catch (error) {
       console.error('Ошибка загрузки настроек из файла:', error);
     }
 
     // Настройки по умолчанию
-    return {
+    const defaultSettings = {
       // Основные настройки
       language: 'ru',
       theme: 'light',
@@ -53,13 +55,22 @@ class SettingsStore {
       backupInterval: 24, // часы
       maxBackups: 10,
     };
+    
+    console.log('Инициализированы дефолтные настройки:', defaultSettings);
+    return defaultSettings;
   }
 
   // Сохранение настроек в файл
   saveSettings(settings) {
     try {
+      // Убеждаемся что директория существует
+      if (!fs.existsSync(this.userDataPath)) {
+        fs.mkdirSync(this.userDataPath, { recursive: true });
+      }
+      
       this.settings = settings;
       fs.writeFileSync(this.settingsPath, JSON.stringify(settings, null, 2), 'utf8');
+      console.log('Настройки сохранены в файл:', settings);
       return true;
     } catch (error) {
       console.error('Ошибка сохранения настроек в файл:', error);
@@ -285,17 +296,36 @@ class StorageManager {
 
   // Settings methods
   getAllSettings() {
-    return this.settingsStore.getSettings();
+    try {
+      const settings = this.settingsStore.getSettings();
+      console.log('Возвращаем настройки из getAllSettings:', settings);
+      return settings;
+    } catch (error) {
+      console.error('Error getting all settings:', error);
+      return {};
+    }
   }
 
   updateSetting(key, value) {
-    const success = this.settingsStore.updateSetting(key, value);
-    return { success };
+    try {
+      console.log(`Обновляем настройку ${key}:`, value);
+      const success = this.settingsStore.updateSetting(key, value);
+      return { success };
+    } catch (error) {
+      console.error(`Error updating setting ${key}:`, error);
+      return { success: false, error: error.message };
+    }
   }
 
   updateSettings(settings) {
-    const success = this.settingsStore.updateSettings(settings);
-    return { success };
+    try {
+      console.log('Обновляем настройки:', settings);
+      const success = this.settingsStore.updateSettings(settings);
+      return { success };
+    } catch (error) {
+      console.error('Error updating settings:', error);
+      return { success: false, error: error.message };
+    }
   }
 
   // Chat methods
@@ -321,10 +351,11 @@ class StorageManager {
       stmt.run(
         chat.id,
         chat.title || 'Новый чат',
-        chat.createdAt || new Date().toISOString(),
-        chat.updatedAt || new Date().toISOString()
+        chat.created_at || chat.createdAt || new Date().toISOString(),
+        chat.updated_at || chat.updatedAt || new Date().toISOString()
       );
       
+      console.log('Chat created successfully:', chat.id);
       return { success: true, chat };
     } catch (error) {
       console.error('Error creating chat:', error);
@@ -344,10 +375,11 @@ class StorageManager {
       
       stmt.run(
         chat.title || 'Без названия',
-        chat.updatedAt || new Date().toISOString(),
+        chat.updated_at || chat.updatedAt || new Date().toISOString(),
         chat.id
       );
       
+      console.log('Chat updated successfully:', chat.id);
       return { success: true, chat };
     } catch (error) {
       console.error('Error updating chat:', error);
@@ -360,6 +392,8 @@ class StorageManager {
       if (!chatId) {
         return { success: false, error: 'Chat ID is required' };
       }
+      
+      console.log('Deleting chat:', chatId);
       
       // Start a transaction
       const transaction = this.db.transaction(() => {
@@ -387,26 +421,37 @@ class StorageManager {
         this.db.prepare('DELETE FROM messages WHERE chat_id = ?').run(chatId);
         
         // Delete chat
-        this.db.prepare('DELETE FROM chats WHERE id = ?').run(chatId);
+        const result = this.db.prepare('DELETE FROM chats WHERE id = ?').run(chatId);
+        
+        console.log('Chat deletion result:', result);
         
         // Return files to delete
-        return attachments;
+        return { attachments, changes: result.changes };
       });
       
-      const filesToDelete = transaction();
+      const { attachments, changes } = transaction();
+      
+      if (changes === 0) {
+        console.warn('No chat was deleted - chat not found:', chatId);
+      } else {
+        console.log('Chat deleted successfully:', chatId);
+      }
       
       // Delete files asynchronously
-      setTimeout(() => {
-        for (const file of filesToDelete) {
-          try {
-            if (fs.existsSync(file.path)) {
-              fs.unlinkSync(file.path);
+      if (attachments && attachments.length > 0) {
+        setTimeout(() => {
+          for (const file of attachments) {
+            try {
+              if (fs.existsSync(file.path)) {
+                fs.unlinkSync(file.path);
+                console.log('Deleted file:', file.path);
+              }
+            } catch (err) {
+              console.error(`Error deleting file ${file.path}:`, err);
             }
-          } catch (err) {
-            console.error(`Error deleting file ${file.path}:`, err);
           }
-        }
-      }, 100);
+        }, 100);
+      }
       
       return { success: true };
     } catch (error) {
@@ -1024,15 +1069,47 @@ app.on('quit', () => {
 // Функция для регистрации обработчиков IPC
 function register(ipcMainInstance) {
   // Settings handlers
-  ipcMainInstance.handle('settings:getAll', async () => storageManager.getAllSettings());
-  ipcMainInstance.handle('settings:update', async (event, settings) => storageManager.updateSettings(settings));
-  ipcMainInstance.handle('settings:updateSingle', async (event, { key, value }) => storageManager.updateSetting(key, value));
+  ipcMainInstance.handle('settings:getAll', async () => {
+    try {
+      const settings = storageManager.getAllSettings();
+      console.log('IPC: Возвращаем настройки:', settings);
+      return settings;
+    } catch (error) {
+      console.error('IPC Error getting settings:', error);
+      return {};
+    }
+  });
+  
+  ipcMainInstance.handle('settings:update', async (event, settings) => {
+    try {
+      console.log('IPC: Обновляем настройки:', settings);
+      return storageManager.updateSettings(settings);
+    } catch (error) {
+      console.error('IPC Error updating settings:', error);
+      return { success: false, error: error.message };
+    }
+  });
+  
+  ipcMainInstance.handle('settings:updateSingle', async (event, { key, value }) => {
+    try {
+      console.log(`IPC: Обновляем настройку ${key}:`, value);
+      return storageManager.updateSetting(key, value);
+    } catch (error) {
+      console.error(`IPC Error updating setting ${key}:`, error);
+      return { success: false, error: error.message };
+    }
+  });
 
   // Chat handlers
   ipcMainInstance.handle('chats:getAll', async () => storageManager.getAllChats());
   ipcMainInstance.handle('chats:create', async (event, chat) => storageManager.createChat(chat));
   ipcMainInstance.handle('chats:update', async (event, chat) => storageManager.updateChat(chat));
-  ipcMainInstance.handle('chats:delete', async (event, chatId) => storageManager.deleteChat(chatId));
+  ipcMainInstance.handle('chats:delete', async (event, chatId) => {
+    console.log('IPC: Deleting chat:', chatId);
+    const result = storageManager.deleteChat(chatId);
+    console.log('IPC: Delete result:', result);
+    return result;
+  });
   ipcMainInstance.handle('chats:searchMessages', async (event, query) => storageManager.searchMessages(query));
 
   // Message handlers

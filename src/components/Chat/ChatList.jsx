@@ -41,6 +41,11 @@ const ChatList = ({ chats, currentChatId }) => {
     if (event && typeof event.stopPropagation === 'function') {
       event.stopPropagation();
     }
+    if (event && typeof event.preventDefault === 'function') {
+      event.preventDefault();
+    }
+    
+    console.log('Opening menu for chat:', chat);
     setSelectedChat(chat);
     setAnchorEl(event.currentTarget);
   };
@@ -51,11 +56,18 @@ const ChatList = ({ chats, currentChatId }) => {
   };
 
   const handleChatClick = (chatId) => {
+    // Закрываем меню если оно открыто
+    if (anchorEl) {
+      handleMenuClose();
+      return;
+    }
+    console.log('Navigating to chat:', chatId);
     navigate(`/chat/${chatId}`);
   };
 
   const handleEdit = () => {
     if (selectedChat) {
+      console.log('Editing chat:', selectedChat);
       setNewTitle(selectedChat.title);
       setEditDialogOpen(true);
     }
@@ -63,13 +75,20 @@ const ChatList = ({ chats, currentChatId }) => {
   };
 
   const handleDelete = () => {
+    console.log('Delete action for chat:', selectedChat);
     setDeleteDialogOpen(true);
     handleMenuClose();
   };
 
   const handleEditSave = async () => {
     if (selectedChat && newTitle.trim()) {
-      await updateChat(selectedChat.id, { title: newTitle.trim() });
+      console.log('Saving chat title:', newTitle);
+      try {
+        await updateChat(selectedChat.id, { title: newTitle.trim() });
+        console.log('Chat title updated successfully');
+      } catch (error) {
+        console.error('Error updating chat title:', error);
+      }
     }
     setEditDialogOpen(false);
     setSelectedChat(null);
@@ -78,9 +97,17 @@ const ChatList = ({ chats, currentChatId }) => {
 
   const handleDeleteConfirm = async () => {
     if (selectedChat) {
-      const success = await deleteChat(selectedChat.id);
-      if (success && currentChatId === selectedChat.id) {
-        navigate('/chat/new');
+      console.log('Confirming delete for chat:', selectedChat.id);
+      try {
+        const success = await deleteChat(selectedChat.id);
+        console.log('Delete result:', success);
+        
+        if (success && currentChatId === selectedChat.id) {
+          // Если удаляем текущий активный чат, переходим к новому чату
+          navigate('/chat/new');
+        }
+      } catch (error) {
+        console.error('Error deleting chat:', error);
       }
     }
     setDeleteDialogOpen(false);
@@ -129,7 +156,7 @@ const ChatList = ({ chats, currentChatId }) => {
         {chats.map((chat) => {
           const isSelected = currentChatId === (chat.id ? chat.id.toString() : '');
           const chatTitle = chat.title || 'Новый чат';
-          const date = formatDate(chat.updated_at) || formatDate(chat.createdAt) || '';
+          const date = formatDate(chat.updated_at) || formatDate(chat.created_at) || '';
           
           return (
             <ListItem key={chat.id} disablePadding>
@@ -168,7 +195,10 @@ const ChatList = ({ chats, currentChatId }) => {
                   <Tooltip title="Действия">
                     <IconButton
                       size="small"
-                      onClick={(e) => handleMenuClick(e, chat)}
+                      onClick={(e) => {
+                        console.log('Menu button clicked for chat:', chat.id);
+                        handleMenuClick(e, chat);
+                      }}
                       sx={{ opacity: 0.7, '&:hover': { opacity: 1 } }}
                     >
                       <MoreVertIcon fontSize="small" />
@@ -187,6 +217,12 @@ const ChatList = ({ chats, currentChatId }) => {
         onClose={handleMenuClose}
         transformOrigin={{ horizontal: 'right', vertical: 'top' }}
         anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+        onClick={(e) => {
+          // Предотвращаем закрытие меню при клике внутри него
+          if (e && typeof e.stopPropagation === 'function') {
+            e.stopPropagation();
+          }
+        }}
       >
         <MenuItem onClick={handleEdit}>
           <ListItemIcon>
@@ -205,6 +241,8 @@ const ChatList = ({ chats, currentChatId }) => {
       <Dialog 
         open={editDialogOpen} 
         onClose={() => setEditDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
       >
         <DialogTitle>Переименовать чат</DialogTitle>
         <DialogContent>
@@ -217,17 +255,26 @@ const ChatList = ({ chats, currentChatId }) => {
             variant="outlined"
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
+            sx={{ mt: 1 }}
           />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setEditDialogOpen(false)}>Отмена</Button>
-          <Button onClick={handleEditSave} variant="contained">Сохранить</Button>
+          <Button 
+            onClick={handleEditSave} 
+            variant="contained"
+            disabled={!newTitle.trim()}
+          >
+            Сохранить
+          </Button>
         </DialogActions>
       </Dialog>
 
       <Dialog 
         open={deleteDialogOpen} 
         onClose={() => setDeleteDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
       >
         <DialogTitle>Удалить чат?</DialogTitle>
         <DialogContent>
@@ -238,7 +285,11 @@ const ChatList = ({ chats, currentChatId }) => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDeleteDialogOpen(false)}>Отмена</Button>
-          <Button onClick={handleDeleteConfirm} color="error" variant="contained">
+          <Button 
+            onClick={handleDeleteConfirm} 
+            color="error" 
+            variant="contained"
+          >
             Удалить
           </Button>
         </DialogActions>

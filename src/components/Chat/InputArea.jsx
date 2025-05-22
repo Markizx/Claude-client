@@ -23,6 +23,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import MicIcon from '@mui/icons-material/Mic';
 import StopIcon from '@mui/icons-material/Stop';
 import { useDropzone } from 'react-dropzone';
+import { useProject } from '../../contexts/ProjectContext';
 
 const InputArea = ({ 
   onSendMessage, 
@@ -40,6 +41,20 @@ const InputArea = ({
   const fileInputRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const recordingIntervalRef = useRef(null);
+  const { getFilesByProjectId } = useProject();
+
+  // Получаем файлы выбранного проекта
+  const getProjectFiles = useCallback(async (projectId) => {
+    if (!projectId || !window.electronAPI) return [];
+    
+    try {
+      const projectFiles = await window.electronAPI.getProjectFiles(projectId);
+      return projectFiles || [];
+    } catch (error) {
+      console.error('Ошибка получения файлов проекта:', error);
+      return [];
+    }
+  }, []);
 
   // Обработка drag and drop
   const onDrop = useCallback((acceptedFiles, rejectedFiles) => {
@@ -82,7 +97,7 @@ const InputArea = ({
   });
 
   // Обработка отправки формы
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     // Проверяем, является ли event объектом события и имеет ли он метод preventDefault
     if (event && typeof event.preventDefault === 'function') {
       event.preventDefault();
@@ -93,8 +108,17 @@ const InputArea = ({
     }
 
     try {
+      setError('');
+      
+      // Получаем файлы проекта, если проект выбран
+      let projectFiles = [];
+      if (selectedProjectId) {
+        projectFiles = await getProjectFiles(selectedProjectId);
+        console.log('Файлы проекта для контекста:', projectFiles);
+      }
+
       // Подготавливаем файлы для отправки
-      Promise.all(
+      const filesToSend = await Promise.all(
         files.map(async (fileData) => {
           try {
             // Если файл уже имеет путь, просто используем его
@@ -137,27 +161,24 @@ const InputArea = ({
             return null;
           }
         })
-      ).then(async (filesToSend) => {
-        // Фильтруем null значения (файлы с ошибками)
-        const validFiles = filesToSend.filter(file => file !== null);
+      );
 
-        // Отправляем сообщение с файлами
-        await onSendMessage(message, validFiles);
-        
-        // Очищаем форму после успешной отправки
-        setMessage('');
-        setFiles([]);
-        setError('');
-        
-        // Освобождаем URL превью
-        files.forEach(file => {
-          if (file.preview && file.preview.startsWith('blob:')) {
-            URL.revokeObjectURL(file.preview);
-          }
-        });
-      }).catch(err => {
-        setError('Ошибка при отправке сообщения: ' + (err.message || err));
-        setTimeout(() => setError(''), 5000);
+      // Фильтруем null значения (файлы с ошибками)
+      const validFiles = filesToSend.filter(file => file !== null);
+
+      // Отправляем сообщение с файлами и контекстом проекта
+      await onSendMessage(message, validFiles, projectFiles);
+      
+      // Очищаем форму после успешной отправки
+      setMessage('');
+      setFiles([]);
+      setError('');
+      
+      // Освобождаем URL превью
+      files.forEach(file => {
+        if (file.preview && file.preview.startsWith('blob:')) {
+          URL.revokeObjectURL(file.preview);
+        }
       });
     } catch (err) {
       setError('Ошибка при отправке сообщения: ' + (err.message || err));
