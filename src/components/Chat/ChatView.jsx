@@ -17,6 +17,7 @@ import {
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import AddIcon from '@mui/icons-material/Add';
 import { useChat } from '../../contexts/ChatContext';
 import { useProject } from '../../contexts/ProjectContext';
 import { useSettings } from '../../contexts/SettingsContext';
@@ -37,6 +38,7 @@ const ChatView = () => {
     deleteChat,
     regenerateLastResponse,
     exportChat,
+    createChat, // ДОБАВЛЕНО: для создания чата
     loading, 
     error, 
     setError 
@@ -58,12 +60,16 @@ const ChatView = () => {
   // Загрузка чата при монтировании компонента или изменении chatId
   useEffect(() => {
     async function fetchChat() {
-      if (chatId) {
+      if (chatId && chatId !== 'new') {
         const chat = await loadChat(chatId);
-        // Если это новый чат, меняем URL
-        if (chat && chat.id && chatId === 'new') {
-          navigate(`/chat/${chat.id}`, { replace: true });
+        // Если чат не найден, перенаправляем на новый чат
+        if (!chat) {
+          console.log('Чат не найден, перенаправляем на новый чат');
+          navigate('/chat/new', { replace: true });
         }
+      } else if (chatId === 'new') {
+        // Для нового чата просто загружаем пустое состояние
+        await loadChat('new');
       }
     }
     fetchChat();
@@ -76,23 +82,34 @@ const ChatView = () => {
     }
   }, [messages]);
 
+  // ДОБАВЛЕНО: обработчик создания нового чата
+  const handleCreateNewChat = async () => {
+    try {
+      const newChat = await createChat('Новый чат');
+      if (newChat && newChat.id) {
+        navigate(`/chat/${newChat.id}`);
+      }
+    } catch (error) {
+      setError('Ошибка при создании чата: ' + (error.message || String(error)));
+    }
+  };
+
   // Обработка отправки сообщения
-  const handleSendMessage = async (content, files) => {
+  const handleSendMessage = async (content, files, projectFiles) => {
     if (!content.trim() && (!files || files.length === 0)) {
       return;
     }
 
     try {
-      // Если выбран проект, получаем его файлы как контекст
-      let projectFiles = [];
-      if (selectedProjectId) {
-        const selectedProject = projects.find(p => p.id === selectedProjectId);
-        if (selectedProject && selectedProject.files) {
-          projectFiles = selectedProject.files;
+      const result = await sendMessage(content, files, projectFiles);
+      
+      // ДОБАВЛЕНО: если чат был создан при отправке сообщения, обновляем URL
+      if (result && chatId === 'new' && window.location.hash.includes('/chat/new')) {
+        // URL уже должен быть обновлен в sendMessage, но на всякий случай проверяем
+        if (currentChat && currentChat.id) {
+          navigate(`/chat/${currentChat.id}`, { replace: true });
         }
       }
-
-      await sendMessage(content, files, projectFiles);
     } catch (error) {
       setError('Ошибка при отправке сообщения: ' + (error.message || String(error)));
     }
@@ -136,8 +153,6 @@ const ChatView = () => {
     if (!editingMessage || !editedContent.trim()) return;
 
     try {
-      // Здесь нужно добавить API метод для обновления сообщения
-      // Пока что просто обновляем локально
       console.log('Редактирование сообщения не реализовано в API');
       setEditMessageDialogOpen(false);
       setEditingMessage(null);
@@ -152,8 +167,6 @@ const ChatView = () => {
     if (!messageToDelete) return;
 
     try {
-      // Здесь нужно добавить API метод для удаления сообщения
-      // Пока что просто скрываем диалог
       console.log('Удаление сообщения не реализовано в API');
       setDeleteConfirmOpen(false);
       setMessageToDelete(null);
@@ -192,23 +205,18 @@ const ChatView = () => {
         text: message.content,
       }).catch(error => {
         console.error('Ошибка при попытке поделиться:', error);
-        
-        // Fallback - копирование в буфер обмена
         handleCopyMessage(message);
       });
     } else {
-      // Fallback - копирование в буфер обмена
       handleCopyMessage(message);
     }
   };
 
   // Обработка поиска
   const handleSearchResult = (result) => {
-    // Результат содержит chat_id, можно перейти к чату
     if (result.chat_id !== currentChat?.id) {
       loadChat(result.chat_id);
     }
-    // Здесь можно добавить выделение найденного сообщения
   };
 
   // Обработка экспорта
@@ -218,7 +226,6 @@ const ChatView = () => {
     try {
       const filePath = await exportChat(currentChat.id, format);
       if (filePath) {
-        // Уведомление об успешном экспорте
         console.log('Чат экспортирован:', filePath);
       }
     } catch (error) {
@@ -226,7 +233,114 @@ const ChatView = () => {
     }
   };
 
-  if (!chatId) {
+  // ИСПРАВЛЕНО: показываем специальный экран для нового чата
+  if (chatId === 'new' && (!currentChat || !messages.length)) {
+    return (
+      <Box sx={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        height: '100%', 
+        overflow: 'hidden',
+        bgcolor: 'background.default'
+      }}>
+        {/* Заголовок нового чата */}
+        <Paper 
+          elevation={0} 
+          sx={{ 
+            p: 2, 
+            borderBottom: '1px solid', 
+            borderColor: 'divider',
+            bgcolor: 'background.paper',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}
+        >
+          <Box>
+            <Typography variant="h6">
+              Новый чат
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Чат будет создан при отправке первого сообщения
+            </Typography>
+          </Box>
+          
+          <Box>
+            <Tooltip title="Поиск по чатам">
+              <IconButton onClick={() => setSearchDialogOpen(true)}>
+                <SearchIcon />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        </Paper>
+
+        {/* Центральная область для нового чата */}
+        <Box sx={{ 
+          flexGrow: 1, 
+          display: 'flex', 
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          px: 4,
+          textAlign: 'center'
+        }}>
+          <Typography variant="h4" sx={{ mb: 2, color: 'text.secondary' }}>
+            👋 Привет!
+          </Typography>
+          <Typography variant="h6" sx={{ mb: 3 }}>
+            Начните новый разговор с Claude
+          </Typography>
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 4, maxWidth: 500 }}>
+            Задайте любой вопрос, загрузите файлы для анализа или выберите проект для работы с контекстом.
+          </Typography>
+          
+          {projects && projects.length > 0 && (
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              💡 У вас есть {projects.length} проектов. Выберите один из них ниже для работы с файлами проекта.
+            </Typography>
+          )}
+        </Box>
+
+        {/* Показываем ошибки */}
+        {error && (
+          <Alert 
+            severity="error" 
+            onClose={() => setError(null)}
+            sx={{ m: 2 }}
+          >
+            {error}
+          </Alert>
+        )}
+
+        {/* Область ввода */}
+        <Paper 
+          elevation={3} 
+          sx={{ 
+            p: 2, 
+            m: 2, 
+            borderRadius: 2
+          }}
+        >
+          <InputArea 
+            onSendMessage={handleSendMessage} 
+            loading={loading}
+            projects={projects}
+            selectedProjectId={selectedProjectId}
+            onProjectSelect={setSelectedProjectId}
+          />
+        </Paper>
+
+        {/* Диалоги */}
+        <SearchDialog
+          open={searchDialogOpen}
+          onClose={() => setSearchDialogOpen(false)}
+          onResultClick={handleSearchResult}
+        />
+      </Box>
+    );
+  }
+
+  if (!chatId || chatId === 'new') {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
         <Typography variant="h6" color="text.secondary">
@@ -328,14 +442,13 @@ const ChatView = () => {
         />
       </Paper>
 
-      {/* Диалог поиска */}
+      {/* Диалоги */}
       <SearchDialog
         open={searchDialogOpen}
         onClose={() => setSearchDialogOpen(false)}
         onResultClick={handleSearchResult}
       />
 
-      {/* Диалог экспорта */}
       <ExportDialog
         open={exportDialogOpen}
         onClose={() => setExportDialogOpen(false)}
@@ -343,7 +456,7 @@ const ChatView = () => {
         onExport={handleExport}
       />
 
-      {/* Диалог редактирования сообщения */}
+      {/* Остальные диалоги остаются без изменений */}
       <Dialog 
         open={editMessageDialogOpen} 
         onClose={() => setEditMessageDialogOpen(false)}
@@ -377,7 +490,6 @@ const ChatView = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Диалог подтверждения удаления */}
       <Dialog 
         open={deleteConfirmOpen} 
         onClose={() => setDeleteConfirmOpen(false)}

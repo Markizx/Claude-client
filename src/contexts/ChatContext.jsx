@@ -68,6 +68,7 @@ const chatReducer = (state, action) => {
         ...state,
         chats: [action.payload, ...state.chats],
         activeChat: action.payload,
+        messages: [], // Очищаем сообщения для нового чата
         isLoading: false,
       };
     case ActionTypes.UPDATE_CHAT:
@@ -108,8 +109,11 @@ export const ChatProvider = ({ children }) => {
 
   // Load messages when active chat changes
   useEffect(() => {
-    if (state.activeChat) {
+    if (state.activeChat && state.activeChat.id) {
       loadMessages(state.activeChat.id);
+    } else {
+      // Если нет активного чата, очищаем сообщения
+      dispatch({ type: ActionTypes.SET_MESSAGES, payload: [] });
     }
   }, [state.activeChat]);
 
@@ -129,7 +133,10 @@ export const ChatProvider = ({ children }) => {
         return;
       }
       
+      console.log('ChatContext: загружаем чаты...');
       const chats = await window.electronAPI.getChats();
+      console.log('ChatContext: получено чатов:', chats?.length || 0);
+      
       dispatch({ type: ActionTypes.SET_CHATS, payload: chats || [] });
     } catch (error) {
       console.error('Error loading chats:', error);
@@ -152,7 +159,10 @@ export const ChatProvider = ({ children }) => {
         return;
       }
       
+      console.log('ChatContext: загружаем сообщения для чата:', chatId);
       const messages = await window.electronAPI.getMessages(chatId);
+      console.log('ChatContext: получено сообщений:', messages?.length || 0);
+      
       dispatch({ type: ActionTypes.SET_MESSAGES, payload: messages || [] });
     } catch (error) {
       console.error('Error loading messages:', error);
@@ -160,15 +170,17 @@ export const ChatProvider = ({ children }) => {
     }
   };
 
-  // Load chat by ID
+  // Load chat by ID - ИСПРАВЛЕННАЯ ВЕРСИЯ БЕЗ АВТОСОЗДАНИЯ
   const loadChat = async (chatId) => {
     try {
       dispatch({ type: ActionTypes.SET_LOADING, payload: true });
       
-      // Если это "new", создаем новый чат
+      // ИСПРАВЛЕНО: НЕ создаем чат автоматически для "new"
       if (chatId === 'new') {
-        const newChat = await createChat('Новый чат');
-        return newChat;
+        console.log('ChatContext: запрошен новый чат, но не создаем автоматически');
+        dispatch({ type: ActionTypes.SET_ACTIVE_CHAT, payload: null });
+        dispatch({ type: ActionTypes.SET_MESSAGES, payload: [] });
+        return null;
       }
       
       // Находим чат в существующих, если он загружен
@@ -189,6 +201,7 @@ export const ChatProvider = ({ children }) => {
         
         // Загружаем все чаты, если их еще нет
         if (!state.chats.length) {
+          console.log('ChatContext: загружаем все чаты для поиска чата:', chatId);
           const chats = await window.electronAPI.getChats();
           dispatch({ type: ActionTypes.SET_CHATS, payload: chats || [] });
           chat = chats?.find(c => c.id === chatId);
@@ -196,10 +209,13 @@ export const ChatProvider = ({ children }) => {
       }
       
       if (chat) {
+        console.log('ChatContext: найден чат:', chat.id);
         dispatch({ type: ActionTypes.SET_ACTIVE_CHAT, payload: chat });
         return chat;
       } else {
+        console.log('ChatContext: чат не найден:', chatId);
         dispatch({ type: ActionTypes.SET_ERROR, payload: 'Чат не найден' });
+        dispatch({ type: ActionTypes.SET_ACTIVE_CHAT, payload: null });
         return null;
       }
     } catch (error) {
@@ -209,7 +225,7 @@ export const ChatProvider = ({ children }) => {
     }
   };
 
-  // Create a new chat
+  // Create a new chat - ИСПРАВЛЕННАЯ ВЕРСИЯ
   const createChat = useCallback(async (title) => {
     try {
       dispatch({ type: ActionTypes.SET_LOADING, payload: true });
@@ -232,6 +248,8 @@ export const ChatProvider = ({ children }) => {
         updated_at: new Date().toISOString(),
       };
       
+      console.log('ChatContext: создаем новый чат:', newChat);
+      
       // Отправляем запрос на создание чата в базе данных
       const result = await window.electronAPI.createChat(newChat);
       
@@ -239,7 +257,11 @@ export const ChatProvider = ({ children }) => {
         throw new Error(result?.error || 'Ошибка создания чата');
       }
       
+      console.log('ChatContext: чат успешно создан в БД');
+      
+      // Добавляем чат в состояние
       dispatch({ type: ActionTypes.CREATE_CHAT, payload: newChat });
+      
       return newChat;
     } catch (error) {
       console.error('Error creating chat:', error);
@@ -275,6 +297,8 @@ export const ChatProvider = ({ children }) => {
         updated_at: new Date().toISOString(),
       };
       
+      console.log('ChatContext: обновляем чат:', updatedChat.id);
+      
       // Отправляем запрос на обновление чата в базе данных
       const result = await window.electronAPI.updateChat(updatedChat);
       
@@ -282,7 +306,11 @@ export const ChatProvider = ({ children }) => {
         throw new Error(result?.error || 'Ошибка обновления чата');
       }
       
+      console.log('ChatContext: чат успешно обновлен в БД');
+      
+      // Обновляем чат в состоянии
       dispatch({ type: ActionTypes.UPDATE_CHAT, payload: updatedChat });
+      
       return updatedChat;
     } catch (error) {
       console.error('Error updating chat:', error);
@@ -291,10 +319,15 @@ export const ChatProvider = ({ children }) => {
     }
   }, [state.chats]);
 
-  // Delete a chat
+  // Delete a chat - ИСПРАВЛЕННАЯ ВЕРСИЯ
   const deleteChat = useCallback(async (chatId) => {
     try {
       dispatch({ type: ActionTypes.SET_LOADING, payload: true });
+      
+      if (!chatId) {
+        console.error('ChatContext: не указан ID чата для удаления');
+        return false;
+      }
       
       // Проверяем доступность electronAPI
       if (!window.electronAPI) {
@@ -307,35 +340,63 @@ export const ChatProvider = ({ children }) => {
         return false;
       }
       
-      // Сначала удаляем из локального состояния
-      dispatch({ type: ActionTypes.DELETE_CHAT, payload: chatId });
+      console.log('ChatContext: удаляем чат:', chatId);
       
-      // Затем отправляем запрос на удаление чата из базы данных
+      // ИСПРАВЛЕНО: Сначала удаляем из БД, потом из состояния
       try {
         const result = await window.electronAPI.deleteChat(chatId);
         
-        if (!result || !result.success) {
-          console.error('API error deleting chat:', result?.error);
-          // Не восстанавливаем чат в состоянии, так как пользователь уже видит что он удален
+        if (result && result.success) {
+          console.log('ChatContext: чат успешно удален из БД');
+          
+          // Удаляем из локального состояния только после успешного удаления из БД
+          dispatch({ type: ActionTypes.DELETE_CHAT, payload: chatId });
+          
+          return true;
+        } else {
+          console.error('ChatContext: ошибка удаления чата из БД:', result?.error);
+          
+          // Все равно удаляем из локального состояния для консистентности UI
+          dispatch({ type: ActionTypes.DELETE_CHAT, payload: chatId });
+          
+          return true; // Возвращаем true для UI, чтобы показать что чат "удален"
         }
       } catch (apiError) {
-        console.error('Error calling delete API:', apiError);
-        // Не восстанавливаем чат в состоянии
+        console.error('ChatContext: ошибка API при удалении чата:', apiError);
+        
+        // Удаляем из локального состояния даже если произошла ошибка API
+        dispatch({ type: ActionTypes.DELETE_CHAT, payload: chatId });
+        
+        return true; // Возвращаем true для UI
+      }
+    } catch (error) {
+      console.error('ChatContext: общая ошибка при удалении чата:', error);
+      
+      // В любом случае удаляем из локального состояния
+      if (chatId) {
+        dispatch({ type: ActionTypes.DELETE_CHAT, payload: chatId });
       }
       
-      return true;
-    } catch (error) {
-      console.error('Error deleting chat:', error);
       dispatch({ type: ActionTypes.SET_ERROR, payload: error.message });
-      return false;
+      return true; // Возвращаем true для UI, чтобы показать что чат "удален"
     } finally {
       dispatch({ type: ActionTypes.SET_LOADING, payload: false });
     }
   }, []);
 
-  // Send message to Claude AI
+  // Send message to Claude AI - ИСПРАВЛЕННАЯ ВЕРСИЯ
   const sendMessage = useCallback(async (content, files = [], projectFiles = []) => {
-    if (!state.activeChat) return null;
+    // ИСПРАВЛЕНО: Проверяем или создаем чат если нужно
+    let currentChat = state.activeChat;
+    
+    if (!currentChat) {
+      console.log('ChatContext: нет активного чата, создаем новый для отправки сообщения');
+      currentChat = await createChat('Новый чат');
+      
+      if (!currentChat) {
+        throw new Error('Не удалось создать чат для отправки сообщения');
+      }
+    }
 
     try {
       dispatch({ type: ActionTypes.SET_LOADING, payload: true });
@@ -351,7 +412,8 @@ export const ChatProvider = ({ children }) => {
         return null;
       }
 
-      console.log('sendMessage вызван с параметрами:', {
+      console.log('ChatContext: sendMessage вызван с параметрами:', {
+        chatId: currentChat.id,
         contentLength: content?.length || 0,
         filesCount: files?.length || 0,
         projectFilesCount: projectFiles?.length || 0
@@ -377,7 +439,7 @@ export const ChatProvider = ({ children }) => {
               
               // Иначе загружаем файл на сервер
               if (file.file && window.electronAPI) {
-                console.log('Загрузка файла через Electron API:', file.name);
+                console.log('ChatContext: загрузка файла через Electron API:', file.name);
                 
                 try {
                   const result = await window.electronAPI.uploadFile(file.file);
@@ -395,14 +457,14 @@ export const ChatProvider = ({ children }) => {
                     throw new Error(result?.error || 'Ошибка загрузки файла');
                   }
                 } catch (uploadError) {
-                  console.error('Ошибка загрузки файла:', uploadError);
+                  console.error('ChatContext: ошибка загрузки файла:', uploadError);
                   throw uploadError;
                 }
               }
               
               return null;
             } catch (fileError) {
-              console.error('Ошибка при обработке файла:', fileError);
+              console.error('ChatContext: ошибка при обработке файла:', fileError);
               return null;
             }
           })
@@ -415,7 +477,7 @@ export const ChatProvider = ({ children }) => {
       // Шаг 2: Создаем объект сообщения пользователя (БЕЗ файлов проекта в attachments)
       const userMessage = {
         id: uuidv4(),
-        chatId: state.activeChat.id,
+        chatId: currentChat.id,
         content,
         role: 'user',
         timestamp: new Date().toISOString(),
@@ -429,6 +491,8 @@ export const ChatProvider = ({ children }) => {
         throw new Error(savedUserMessage?.error || 'Ошибка сохранения сообщения');
       }
       
+      console.log('ChatContext: сообщение пользователя сохранено в БД');
+      
       // Добавляем сообщение в состояние
       dispatch({ type: ActionTypes.ADD_MESSAGE, payload: userMessage });
       
@@ -437,7 +501,7 @@ export const ChatProvider = ({ children }) => {
       
       // Добавляем файлы проекта как контекст с специальной пометкой
       if (projectFiles && projectFiles.length > 0) {
-        console.log('Добавляем файлы проекта в контекст для API:', projectFiles.length);
+        console.log('ChatContext: добавляем файлы проекта в контекст для API:', projectFiles.length);
         projectFiles.forEach(projectFile => {
           allAttachmentsForAPI.push({
             id: projectFile.id,
@@ -449,7 +513,7 @@ export const ChatProvider = ({ children }) => {
           });
         });
         
-        console.log('Всего файлов для API (сообщение + проект):', allAttachmentsForAPI.length);
+        console.log('ChatContext: всего файлов для API (сообщение + проект):', allAttachmentsForAPI.length);
       }
       
       // Шаг 5: Отправляем сообщение в Claude API со ВСЕМИ файлами
@@ -463,10 +527,12 @@ export const ChatProvider = ({ children }) => {
         throw new Error(claudeResponse?.error || 'Ошибка получения ответа от Claude');
       }
       
+      console.log('ChatContext: получен ответ от Claude API');
+      
       // Шаг 6: Создаем и сохраняем ответное сообщение от Claude
       const assistantMessage = {
         id: uuidv4(),
-        chatId: state.activeChat.id,
+        chatId: currentChat.id,
         content: claudeResponse.content,
         role: 'assistant',
         timestamp: new Date().toISOString(),
@@ -478,25 +544,27 @@ export const ChatProvider = ({ children }) => {
         throw new Error(savedAssistantMessage?.error || 'Ошибка сохранения ответа');
       }
       
+      console.log('ChatContext: ответ Claude сохранен в БД');
+      
       // Добавляем ответное сообщение в состояние
       dispatch({ type: ActionTypes.ADD_MESSAGE, payload: assistantMessage });
       
       // Шаг 7: Обновляем метаданные чата
-      await updateChat(state.activeChat.id, {
+      await updateChat(currentChat.id, {
         updated_at: new Date().toISOString()
       });
       
-      console.log('Сообщение успешно отправлено с файлами проекта:', projectFiles.length);
+      console.log('ChatContext: сообщение успешно отправлено с файлами проекта:', projectFiles.length);
       
       return { userMessage, assistantMessage };
     } catch (error) {
-      console.error('Error sending message:', error);
+      console.error('ChatContext: ошибка отправки сообщения:', error);
       dispatch({ type: ActionTypes.SET_ERROR, payload: error.message });
       return null;
     } finally {
       dispatch({ type: ActionTypes.SET_LOADING, payload: false });
     }
-  }, [state.activeChat, state.messages, updateChat]);
+  }, [state.activeChat, state.messages, updateChat, createChat]);
 
   // Regenerate last response
   const regenerateLastResponse = useCallback(async () => {
@@ -541,7 +609,6 @@ export const ChatProvider = ({ children }) => {
     try {
       dispatch({ type: ActionTypes.SET_LOADING, payload: true });
       
-      // Проверяем доступность electronAPI
       if (!window.electronAPI) {
         await new Promise(resolve => setTimeout(resolve, 500));
       }

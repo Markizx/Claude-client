@@ -37,29 +37,39 @@ const ProjectList = ({ projects, currentProjectId }) => {
   const [selectedProject, setSelectedProject] = useState(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState(null); // ИСПРАВЛЕНО: отдельное состояние
   const [newTitle, setNewTitle] = useState('');
   const [newDescription, setNewDescription] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const handleMenuClick = (event, project) => {
-    // Останавливаем всплытие события, чтобы не вызвать клик по проекту
-    if (event && typeof event.stopPropagation === 'function') {
-      event.stopPropagation();
-    }
+    // ИСПРАВЛЕНО: Останавливаем всплытие события
+    event.stopPropagation();
+    event.preventDefault();
+    
+    console.log('ProjectList: Opening menu for project:', project.id);
     setSelectedProject(project);
     setAnchorEl(event.currentTarget);
   };
 
   const handleMenuClose = () => {
     setAnchorEl(null);
-    setSelectedProject(null);
+    // НЕ очищаем selectedProject здесь
   };
 
   const handleProjectClick = (projectId) => {
+    // Проверяем, не открыто ли меню
+    if (anchorEl) {
+      return; // Игнорируем клик если меню открыто
+    }
+    
+    console.log('ProjectList: Navigating to project:', projectId);
     navigate(`/project/${projectId}`);
   };
 
   const handleEdit = () => {
     if (selectedProject) {
+      console.log('ProjectList: Editing project:', selectedProject.id);
       setNewTitle(selectedProject.title || selectedProject.name || '');
       setNewDescription(selectedProject.description || '');
       setEditDialogOpen(true);
@@ -68,7 +78,11 @@ const ProjectList = ({ projects, currentProjectId }) => {
   };
 
   const handleDelete = () => {
-    setDeleteDialogOpen(true);
+    if (selectedProject) {
+      console.log('ProjectList: Delete action for project:', selectedProject.id);
+      setProjectToDelete(selectedProject); // ИСПРАВЛЕНО: сохраняем в отдельном состоянии
+      setDeleteDialogOpen(true);
+    }
     handleMenuClose();
   };
 
@@ -85,11 +99,27 @@ const ProjectList = ({ projects, currentProjectId }) => {
 
   const handleEditSave = async () => {
     if (selectedProject && newTitle.trim()) {
-      await updateProject(selectedProject.id, { 
+      console.log('ProjectList: Saving project updates:', {
+        id: selectedProject.id,
         title: newTitle.trim(),
         description: newDescription.trim()
       });
+      
+      try {
+        await updateProject(selectedProject.id, { 
+          title: newTitle.trim(),
+          name: newTitle.trim(), // Также обновляем name для совместимости
+          description: newDescription.trim()
+        });
+        console.log('ProjectList: Project updated successfully');
+      } catch (error) {
+        console.error('ProjectList: Error updating project:', error);
+      }
     }
+    handleEditCancel();
+  };
+
+  const handleEditCancel = () => {
     setEditDialogOpen(false);
     setSelectedProject(null);
     setNewTitle('');
@@ -97,10 +127,40 @@ const ProjectList = ({ projects, currentProjectId }) => {
   };
 
   const handleDeleteConfirm = async () => {
-    if (selectedProject) {
-      await deleteProject(selectedProject.id);
+    if (!projectToDelete) {
+      console.error('ProjectList: No project selected for deletion');
+      return;
     }
+
+    setIsDeleting(true);
+    console.log('ProjectList: Confirming delete for project:', projectToDelete.id);
+    
+    try {
+      const success = await deleteProject(projectToDelete.id);
+      console.log('ProjectList: Delete result:', success);
+      
+      if (success) {
+        // Если удаляем текущий активный проект, переходим на главную
+        if (currentProjectId === projectToDelete.id) {
+          console.log('ProjectList: Deleted current active project, navigating to home');
+          navigate('/');
+        }
+        
+        console.log('ProjectList: Project deleted successfully');
+      } else {
+        console.error('ProjectList: Failed to delete project');
+      }
+    } catch (error) {
+      console.error('ProjectList: Error deleting project:', error);
+    } finally {
+      handleDeleteCancel();
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setIsDeleting(false);
     setDeleteDialogOpen(false);
+    setProjectToDelete(null);
     setSelectedProject(null);
   };
 
@@ -157,6 +217,7 @@ const ProjectList = ({ projects, currentProjectId }) => {
                   borderRadius: 1,
                   mx: 1,
                   mb: 0.5,
+                  position: 'relative',
                   '&.Mui-selected': {
                     backgroundColor: 'primary.main',
                     color: 'primary.contrastText',
@@ -172,7 +233,7 @@ const ProjectList = ({ projects, currentProjectId }) => {
                 <ListItemText
                   primary={
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Typography variant="body2" noWrap>
+                      <Typography variant="body2" noWrap sx={{ pr: 5 }}>
                         {projectTitle}
                       </Typography>
                       {fileCount > 0 && (
@@ -198,7 +259,7 @@ const ProjectList = ({ projects, currentProjectId }) => {
                         </Typography>
                       )}
                       <Typography variant="caption" color="text.secondary">
-                        {formatDate(project.updated_at) || formatDate(project.createdAt) || 'Дата неизвестна'}
+                        {formatDate(project.updated_at) || formatDate(project.updatedAt) || formatDate(project.created_at) || formatDate(project.createdAt) || 'Дата неизвестна'}
                       </Typography>
                     </Box>
                   }
@@ -209,17 +270,34 @@ const ProjectList = ({ projects, currentProjectId }) => {
                     component: 'div'
                   }}
                 />
-                <ListItemSecondaryAction>
+                
+                {/* ИСПРАВЛЕННАЯ кнопка меню */}
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    right: 8,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    zIndex: 10
+                  }}
+                >
                   <Tooltip title="Действия">
                     <IconButton
                       size="small"
                       onClick={(e) => handleMenuClick(e, project)}
-                      sx={{ opacity: 0.7, '&:hover': { opacity: 1 } }}
+                      sx={{ 
+                        opacity: 0.7, 
+                        '&:hover': { 
+                          opacity: 1,
+                          bgcolor: 'rgba(255,255,255,0.2)'
+                        },
+                        bgcolor: 'rgba(255,255,255,0.1)'
+                      }}
                     >
                       <MoreVertIcon fontSize="small" />
                     </IconButton>
                   </Tooltip>
-                </ListItemSecondaryAction>
+                </Box>
               </ListItemButton>
             </ListItem>
           );
@@ -232,6 +310,7 @@ const ProjectList = ({ projects, currentProjectId }) => {
         onClose={handleMenuClose}
         transformOrigin={{ horizontal: 'right', vertical: 'top' }}
         anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+        onClick={(e) => e.stopPropagation()}
       >
         <MenuItem onClick={handleCreateChat}>
           <ListItemIcon>
@@ -253,9 +332,12 @@ const ProjectList = ({ projects, currentProjectId }) => {
         </MenuItem>
       </Menu>
 
+      {/* Диалог редактирования */}
       <Dialog 
         open={editDialogOpen} 
-        onClose={() => setEditDialogOpen(false)}
+        onClose={handleEditCancel}
+        maxWidth="sm"
+        fullWidth
       >
         <DialogTitle>Редактировать проект</DialogTitle>
         <DialogContent>
@@ -283,26 +365,45 @@ const ProjectList = ({ projects, currentProjectId }) => {
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setEditDialogOpen(false)}>Отмена</Button>
-          <Button onClick={handleEditSave} variant="contained">Сохранить</Button>
+          <Button onClick={handleEditCancel}>Отмена</Button>
+          <Button 
+            onClick={handleEditSave} 
+            variant="contained"
+            disabled={!newTitle.trim()}
+          >
+            Сохранить
+          </Button>
         </DialogActions>
       </Dialog>
 
+      {/* Диалог удаления */}
       <Dialog 
         open={deleteDialogOpen} 
-        onClose={() => setDeleteDialogOpen(false)}
+        onClose={!isDeleting ? handleDeleteCancel : undefined}
+        maxWidth="sm"
+        fullWidth
       >
         <DialogTitle>Удалить проект?</DialogTitle>
         <DialogContent>
           <Typography>
-            Вы уверены, что хотите удалить проект "{selectedProject?.title || selectedProject?.name || 'Проект без названия'}"? 
+            Вы уверены, что хотите удалить проект "{projectToDelete?.title || projectToDelete?.name || 'Проект без названия'}"? 
             Все файлы проекта будут удалены. Это действие нельзя отменить.
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)}>Отмена</Button>
-          <Button onClick={handleDeleteConfirm} color="error" variant="contained">
-            Удалить
+          <Button 
+            onClick={handleDeleteCancel}
+            disabled={isDeleting}
+          >
+            Отмена
+          </Button>
+          <Button 
+            onClick={handleDeleteConfirm} 
+            color="error" 
+            variant="contained"
+            disabled={isDeleting}
+          >
+            {isDeleting ? 'Удаление...' : 'Удалить'}
           </Button>
         </DialogActions>
       </Dialog>
