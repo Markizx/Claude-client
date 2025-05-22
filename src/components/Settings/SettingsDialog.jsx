@@ -46,7 +46,7 @@ const TabPanel = ({ children, value, index, ...other }) => (
 );
 
 const SettingsDialog = ({ open, onClose }) => {
-  const { settings, updateSettings, resetSettings, error: settingsError } = useSettings();
+  const { settings, updateSettings, resetSettings, error: settingsError, loading: settingsLoading } = useSettings();
   
   const [activeTab, setActiveTab] = useState(0);
   const [localSettings, setLocalSettings] = useState({
@@ -83,20 +83,31 @@ const SettingsDialog = ({ open, onClose }) => {
 
   // Загрузка настроек при открытии диалога
   useEffect(() => {
-    if (open && settings) {
+    if (open && settings && !settingsLoading) {
+      console.log('Загружаем настройки в диалог:', settings);
       setLocalSettings({ ...localSettings, ...settings });
+      setError(null);
     }
-  }, [open, settings]);
+  }, [open, settings, settingsLoading]);
+
+  // Обновляем localSettings при изменении настроек из контекста
+  useEffect(() => {
+    if (settings && !settingsLoading) {
+      console.log('Обновляем локальные настройки из контекста:', settings);
+      setLocalSettings(prevLocal => ({ ...prevLocal, ...settings }));
+    }
+  }, [settings, settingsLoading]);
 
   const handleTabChange = (event, newValue) => {
     setActiveTab(newValue);
   };
 
   const handleInputChange = (field, value) => {
-    setLocalSettings({
-      ...localSettings,
+    console.log(`Изменение поля ${field}:`, value);
+    setLocalSettings(prev => ({
+      ...prev,
       [field]: value
-    });
+    }));
   };
 
   const handleSwitchChange = (field) => (event) => {
@@ -116,42 +127,69 @@ const SettingsDialog = ({ open, onClose }) => {
       setLoading(true);
       setError(null);
       
+      console.log('Сохраняем настройки:', localSettings);
       const success = await updateSettings(localSettings);
       
       if (success) {
         setSuccess(true);
         setTimeout(() => setSuccess(false), 3000);
+        console.log('Настройки успешно сохранены');
       } else {
         setError('Не удалось сохранить настройки');
+        console.error('Не удалось сохранить настройки');
       }
     } catch (err) {
+      console.error('Ошибка при сохранении настроек:', err);
       setError(`Ошибка сохранения настроек: ${err.message}`);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleReset = () => {
-    // Сбрасываем локальные настройки к значениям по умолчанию
-    setLocalSettings({
-      language: 'ru',
-      theme: 'light',
-      autoSave: true,
-      confirmDelete: true,
-      model: 'claude-3-7-sonnet-20250219',
-      maxTokens: 4096,
-      temperature: 0.7,
-      topP: 1.0,
-      messageAnimation: true,
-      compactMode: false,
-      showTimestamps: true,
-      fontSize: 14,
-      soundEnabled: true,
-      desktopNotifications: true,
-      autoBackup: false,
-      backupInterval: 24,
-      maxBackups: 10,
-    });
+  const handleReset = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      console.log('Сбрасываем настройки');
+      const success = await resetSettings();
+      
+      if (success) {
+        // Сбрасываем локальные настройки к значениям по умолчанию
+        const defaultSettings = {
+          language: 'ru',
+          theme: 'light',
+          autoSave: true,
+          confirmDelete: true,
+          model: 'claude-3-7-sonnet-20250219',
+          maxTokens: 4096,
+          temperature: 0.7,
+          topP: 1.0,
+          messageAnimation: true,
+          compactMode: false,
+          showTimestamps: true,
+          fontSize: 14,
+          soundEnabled: true,
+          desktopNotifications: true,
+          autoBackup: false,
+          backupInterval: 24,
+          maxBackups: 10,
+        };
+        
+        setLocalSettings(defaultSettings);
+        setSuccess(true);
+        setTimeout(() => setSuccess(false), 3000);
+        console.log('Настройки сброшены к значениям по умолчанию');
+      } else {
+        setError('Не удалось сбросить настройки');
+        console.error('Не удалось сбросить настройки');
+      }
+    } catch (err) {
+      console.error('Ошибка при сбросе настроек:', err);
+      setError(`Ошибка сброса настроек: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleBackup = async () => {
@@ -229,7 +267,7 @@ const SettingsDialog = ({ open, onClose }) => {
 
   // Доступные модели Claude
   const availableModels = [
-    { value: 'claude-3-7-sonnet-20250219', label: 'Claude 3.7 Sonnet' },
+    { value: 'claude-3-7-sonnet-20250219', label: 'Claude 3.7 Sonnet (рекомендуется)' },
     { value: 'claude-3-5-sonnet-20240620', label: 'Claude 3.5 Sonnet' },
     { value: 'claude-3-opus-20240229', label: 'Claude 3 Opus' },
     { value: 'claude-3-sonnet-20240229', label: 'Claude 3 Sonnet' },
@@ -267,6 +305,12 @@ const SettingsDialog = ({ open, onClose }) => {
             {error || settingsError}
           </Alert>
         )}
+
+        {settingsLoading && (
+          <Alert severity="info" sx={{ mb: 2 }}>
+            Загрузка настроек...
+          </Alert>
+        )}
         
         <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
           <Tabs value={activeTab} onChange={handleTabChange}>
@@ -284,7 +328,7 @@ const SettingsDialog = ({ open, onClose }) => {
               <InputLabel id="language-label">Язык интерфейса</InputLabel>
               <Select
                 labelId="language-label"
-                value={localSettings.language}
+                value={localSettings.language || 'ru'}
                 label="Язык интерфейса"
                 onChange={handleSelectChange('language')}
               >
@@ -297,7 +341,7 @@ const SettingsDialog = ({ open, onClose }) => {
               <InputLabel id="theme-label">Тема</InputLabel>
               <Select
                 labelId="theme-label"
-                value={localSettings.theme}
+                value={localSettings.theme || 'light'}
                 label="Тема"
                 onChange={handleSelectChange('theme')}
               >
@@ -310,7 +354,7 @@ const SettingsDialog = ({ open, onClose }) => {
             <FormControlLabel
               control={
                 <Switch
-                  checked={localSettings.autoSave}
+                  checked={localSettings.autoSave !== false}
                   onChange={handleSwitchChange('autoSave')}
                 />
               }
@@ -320,7 +364,7 @@ const SettingsDialog = ({ open, onClose }) => {
             <FormControlLabel
               control={
                 <Switch
-                  checked={localSettings.confirmDelete}
+                  checked={localSettings.confirmDelete !== false}
                   onChange={handleSwitchChange('confirmDelete')}
                 />
               }
@@ -336,7 +380,7 @@ const SettingsDialog = ({ open, onClose }) => {
               <InputLabel id="model-label">Модель</InputLabel>
               <Select
                 labelId="model-label"
-                value={localSettings.model}
+                value={localSettings.model || 'claude-3-7-sonnet-20250219'}
                 label="Модель"
                 onChange={handleSelectChange('model')}
               >
@@ -352,17 +396,17 @@ const SettingsDialog = ({ open, onClose }) => {
               fullWidth
               type="number"
               label="Максимум токенов"
-              value={localSettings.maxTokens}
-              onChange={(e) => handleInputChange('maxTokens', parseInt(e.target.value))}
+              value={localSettings.maxTokens || 4096}
+              onChange={(e) => handleInputChange('maxTokens', parseInt(e.target.value) || 4096)}
               inputProps={{ min: 1, max: 8192 }}
               sx={{ mb: 3 }}
             />
 
             <Typography gutterBottom>
-              Температура: {localSettings.temperature}
+              Температура: {localSettings.temperature || 0.7}
             </Typography>
             <Slider
-              value={localSettings.temperature}
+              value={localSettings.temperature || 0.7}
               onChange={handleSliderChange('temperature')}
               min={0}
               max={2}
@@ -373,10 +417,10 @@ const SettingsDialog = ({ open, onClose }) => {
             />
 
             <Typography gutterBottom>
-              Top P: {localSettings.topP}
+              Top P: {localSettings.topP || 1.0}
             </Typography>
             <Slider
-              value={localSettings.topP}
+              value={localSettings.topP || 1.0}
               onChange={handleSliderChange('topP')}
               min={0}
               max={1}
@@ -394,7 +438,7 @@ const SettingsDialog = ({ open, onClose }) => {
             <FormControlLabel
               control={
                 <Switch
-                  checked={localSettings.messageAnimation}
+                  checked={localSettings.messageAnimation !== false}
                   onChange={handleSwitchChange('messageAnimation')}
                 />
               }
@@ -404,7 +448,7 @@ const SettingsDialog = ({ open, onClose }) => {
             <FormControlLabel
               control={
                 <Switch
-                  checked={localSettings.compactMode}
+                  checked={localSettings.compactMode === true}
                   onChange={handleSwitchChange('compactMode')}
                 />
               }
@@ -414,7 +458,7 @@ const SettingsDialog = ({ open, onClose }) => {
             <FormControlLabel
               control={
                 <Switch
-                  checked={localSettings.showTimestamps}
+                  checked={localSettings.showTimestamps !== false}
                   onChange={handleSwitchChange('showTimestamps')}
                 />
               }
@@ -422,10 +466,10 @@ const SettingsDialog = ({ open, onClose }) => {
             />
 
             <Typography gutterBottom sx={{ mt: 3 }}>
-              Размер шрифта: {localSettings.fontSize}px
+              Размер шрифта: {localSettings.fontSize || 14}px
             </Typography>
             <Slider
-              value={localSettings.fontSize}
+              value={localSettings.fontSize || 14}
               onChange={handleSliderChange('fontSize')}
               min={12}
               max={20}
@@ -438,7 +482,7 @@ const SettingsDialog = ({ open, onClose }) => {
             <FormControlLabel
               control={
                 <Switch
-                  checked={localSettings.soundEnabled}
+                  checked={localSettings.soundEnabled !== false}
                   onChange={handleSwitchChange('soundEnabled')}
                 />
               }
@@ -448,7 +492,7 @@ const SettingsDialog = ({ open, onClose }) => {
             <FormControlLabel
               control={
                 <Switch
-                  checked={localSettings.desktopNotifications}
+                  checked={localSettings.desktopNotifications !== false}
                   onChange={handleSwitchChange('desktopNotifications')}
                 />
               }
@@ -508,7 +552,7 @@ const SettingsDialog = ({ open, onClose }) => {
             <FormControlLabel
               control={
                 <Switch
-                  checked={localSettings.autoBackup}
+                  checked={localSettings.autoBackup === true}
                   onChange={handleSwitchChange('autoBackup')}
                 />
               }
@@ -520,8 +564,8 @@ const SettingsDialog = ({ open, onClose }) => {
                 <TextField
                   type="number"
                   label="Интервал резервного копирования (часы)"
-                  value={localSettings.backupInterval}
-                  onChange={(e) => handleInputChange('backupInterval', parseInt(e.target.value))}
+                  value={localSettings.backupInterval || 24}
+                  onChange={(e) => handleInputChange('backupInterval', parseInt(e.target.value) || 24)}
                   inputProps={{ min: 1, max: 168 }}
                   sx={{ mr: 2, minWidth: 200 }}
                 />
@@ -529,8 +573,8 @@ const SettingsDialog = ({ open, onClose }) => {
                 <TextField
                   type="number"
                   label="Максимум резервных копий"
-                  value={localSettings.maxBackups}
-                  onChange={(e) => handleInputChange('maxBackups', parseInt(e.target.value))}
+                  value={localSettings.maxBackups || 10}
+                  onChange={(e) => handleInputChange('maxBackups', parseInt(e.target.value) || 10)}
                   inputProps={{ min: 1, max: 50 }}
                   sx={{ minWidth: 200 }}
                 />
@@ -541,19 +585,19 @@ const SettingsDialog = ({ open, onClose }) => {
       </DialogContent>
 
       <DialogActions>
-        <Button onClick={handleReset} startIcon={<RestoreIcon />}>
+        <Button onClick={handleReset} startIcon={<RestoreIcon />} disabled={loading}>
           Сбросить
         </Button>
-        <Button onClick={handleClose}>
+        <Button onClick={handleClose} disabled={loading}>
           Отмена
         </Button>
         <Button
           onClick={handleSave}
           variant="contained"
           startIcon={<SaveIcon />}
-          disabled={loading}
+          disabled={loading || settingsLoading}
         >
-          Сохранить
+          {loading ? 'Сохранение...' : 'Сохранить'}
         </Button>
       </DialogActions>
     </Dialog>

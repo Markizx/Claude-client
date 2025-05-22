@@ -4,83 +4,91 @@ const path = require('path');
 const Database = require('better-sqlite3');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
+const Store = require('electron-store');
 
 // Класс для управления хранилищем настроек
 class SettingsStore {
   constructor() {
-    this.userDataPath = app.getPath('userData');
-    this.settingsPath = path.join(this.userDataPath, 'settings.json');
-    this.settings = this.loadSettings();
-  }
-
-  // Загрузка настроек из файла
-  loadSettings() {
-    try {
-      if (fs.existsSync(this.settingsPath)) {
-        const data = fs.readFileSync(this.settingsPath, 'utf8');
-        const settings = JSON.parse(data);
-        console.log('Настройки загружены из файла:', settings);
-        return settings;
+    this.store = new Store({
+      name: 'claude-desktop-settings',
+      defaults: {
+        // Основные настройки
+        language: 'ru',
+        theme: 'light',
+        autoSave: true,
+        confirmDelete: true,
+        
+        // Настройки AI
+        model: 'claude-3-7-sonnet-20250219',
+        maxTokens: 4096,
+        temperature: 0.7,
+        topP: 1.0,
+        
+        // Интерфейс
+        messageAnimation: true,
+        compactMode: false,
+        showTimestamps: true,
+        fontSize: 14,
+        
+        // Уведомления
+        soundEnabled: true,
+        desktopNotifications: true,
+        
+        // Резервное копирование
+        autoBackup: false,
+        backupInterval: 24, // часы
+        maxBackups: 10,
       }
-    } catch (error) {
-      console.error('Ошибка загрузки настроек из файла:', error);
-    }
-
-    // Настройки по умолчанию
-    const defaultSettings = {
-      // Основные настройки
-      language: 'ru',
-      theme: 'light',
-      autoSave: true,
-      confirmDelete: true,
-      
-      // Настройки AI
-      model: 'claude-3-7-sonnet-20250219',
-      maxTokens: 4096,
-      temperature: 0.7,
-      topP: 1.0,
-      
-      // Интерфейс
-      messageAnimation: true,
-      compactMode: false,
-      showTimestamps: true,
-      fontSize: 14,
-      
-      // Уведомления
-      soundEnabled: true,
-      desktopNotifications: true,
-      
-      // Резервное копирование
-      autoBackup: false,
-      backupInterval: 24, // часы
-      maxBackups: 10,
-    };
+    });
     
-    console.log('Инициализированы дефолтные настройки:', defaultSettings);
-    return defaultSettings;
-  }
-
-  // Сохранение настроек в файл
-  saveSettings(settings) {
-    try {
-      // Убеждаемся что директория существует
-      if (!fs.existsSync(this.userDataPath)) {
-        fs.mkdirSync(this.userDataPath, { recursive: true });
-      }
-      
-      this.settings = settings;
-      fs.writeFileSync(this.settingsPath, JSON.stringify(settings, null, 2), 'utf8');
-      console.log('Настройки сохранены в файл:', settings);
-      return true;
-    } catch (error) {
-      console.error('Ошибка сохранения настроек в файл:', error);
-      return false;
+    // Проверяем и устанавливаем правильную модель при инициализации
+    const currentModel = this.store.get('model');
+    if (!currentModel || currentModel !== 'claude-3-7-sonnet-20250219') {
+      this.store.set('model', 'claude-3-7-sonnet-20250219');
     }
+    
+    console.log('SettingsStore инициализирован с настройками:', this.store.store);
   }
 
   // Получение всех настроек
   getSettings() {
-    return this.settings;
+    try {
+      const settings = this.store.store;
+      console.log('Загружены настройки:', settings);
+      return settings;
+    } catch (error) {
+      console.error('Ошибка загрузки настроек:', error);
+      return this.store.store; // возвращаем дефолтные
+    }
+  }
+
+  // Сохранение всех настроек
+  saveSettings(settings) {
+    try {
+      if (!settings || typeof settings !== 'object') {
+        console.error('Неверный формат настроек:', settings);
+        return false;
+      }
+
+      // Очищаем null/undefined значения
+      const cleanSettings = {};
+      for (const [key, value] of Object.entries(settings)) {
+        cleanSettings[key] = value === null || value === undefined ? '' : value;
+      }
+      
+      // Всегда устанавливаем правильную модель
+      cleanSettings.model = cleanSettings.model || 'claude-3-7-sonnet-20250219';
+      
+      // Сохраняем все настройки
+      this.store.clear();
+      this.store.set(cleanSettings);
+      
+      console.log('Настройки сохранены:', cleanSettings);
+      return true;
+    } catch (error) {
+      console.error('Ошибка сохранения настроек:', error);
+      return false;
+    }
   }
 
   // Обновление одной настройки
@@ -88,23 +96,36 @@ class SettingsStore {
     if (!key) return false;
     
     try {
-      this.settings = { ...this.settings, [key]: value };
-      return this.saveSettings(this.settings);
+      // Очищаем null/undefined значения
+      const cleanValue = value === null || value === undefined ? '' : value;
+      
+      this.store.set(key, cleanValue);
+      console.log(`Настройка обновлена: ${key} = ${cleanValue}`);
+      return true;
     } catch (error) {
       console.error(`Ошибка обновления настройки ${key}:`, error);
       return false;
     }
   }
 
-  // Обновление нескольких настроек
-  updateSettings(newSettings) {
-    if (!newSettings || typeof newSettings !== 'object') return false;
-    
+  // Получение одной настройки
+  getSetting(key, defaultValue = null) {
     try {
-      this.settings = { ...this.settings, ...newSettings };
-      return this.saveSettings(this.settings);
+      return this.store.get(key, defaultValue);
     } catch (error) {
-      console.error('Ошибка обновления настроек:', error);
+      console.error(`Ошибка получения настройки ${key}:`, error);
+      return defaultValue;
+    }
+  }
+  
+  // Сброс всех настроек
+  resetSettings() {
+    try {
+      this.store.clear();
+      console.log('Настройки сброшены к значениям по умолчанию');
+      return true;
+    } catch (error) {
+      console.error('Ошибка сброса настроек:', error);
       return false;
     }
   }
@@ -296,36 +317,26 @@ class StorageManager {
 
   // Settings methods
   getAllSettings() {
-    try {
-      const settings = this.settingsStore.getSettings();
-      console.log('Возвращаем настройки из getAllSettings:', settings);
-      return settings;
-    } catch (error) {
-      console.error('Error getting all settings:', error);
-      return {};
-    }
+    return this.settingsStore.getSettings();
   }
 
   updateSetting(key, value) {
-    try {
-      console.log(`Обновляем настройку ${key}:`, value);
-      const success = this.settingsStore.updateSetting(key, value);
-      return { success };
-    } catch (error) {
-      console.error(`Error updating setting ${key}:`, error);
-      return { success: false, error: error.message };
-    }
+    const success = this.settingsStore.updateSetting(key, value);
+    return { success };
   }
 
   updateSettings(settings) {
-    try {
-      console.log('Обновляем настройки:', settings);
-      const success = this.settingsStore.updateSettings(settings);
-      return { success };
-    } catch (error) {
-      console.error('Error updating settings:', error);
-      return { success: false, error: error.message };
-    }
+    const success = this.settingsStore.saveSettings(settings);
+    return { success };
+  }
+
+  getSetting(key, defaultValue = null) {
+    return this.settingsStore.getSetting(key, defaultValue);
+  }
+
+  resetSettings() {
+    const success = this.settingsStore.resetSettings();
+    return { success };
   }
 
   // Chat methods
@@ -351,11 +362,10 @@ class StorageManager {
       stmt.run(
         chat.id,
         chat.title || 'Новый чат',
-        chat.created_at || chat.createdAt || new Date().toISOString(),
-        chat.updated_at || chat.updatedAt || new Date().toISOString()
+        chat.createdAt || new Date().toISOString(),
+        chat.updatedAt || new Date().toISOString()
       );
       
-      console.log('Chat created successfully:', chat.id);
       return { success: true, chat };
     } catch (error) {
       console.error('Error creating chat:', error);
@@ -375,11 +385,10 @@ class StorageManager {
       
       stmt.run(
         chat.title || 'Без названия',
-        chat.updated_at || chat.updatedAt || new Date().toISOString(),
+        chat.updatedAt || new Date().toISOString(),
         chat.id
       );
       
-      console.log('Chat updated successfully:', chat.id);
       return { success: true, chat };
     } catch (error) {
       console.error('Error updating chat:', error);
@@ -392,8 +401,6 @@ class StorageManager {
       if (!chatId) {
         return { success: false, error: 'Chat ID is required' };
       }
-      
-      console.log('Deleting chat:', chatId);
       
       // Start a transaction
       const transaction = this.db.transaction(() => {
@@ -421,37 +428,26 @@ class StorageManager {
         this.db.prepare('DELETE FROM messages WHERE chat_id = ?').run(chatId);
         
         // Delete chat
-        const result = this.db.prepare('DELETE FROM chats WHERE id = ?').run(chatId);
-        
-        console.log('Chat deletion result:', result);
+        this.db.prepare('DELETE FROM chats WHERE id = ?').run(chatId);
         
         // Return files to delete
-        return { attachments, changes: result.changes };
+        return attachments;
       });
       
-      const { attachments, changes } = transaction();
-      
-      if (changes === 0) {
-        console.warn('No chat was deleted - chat not found:', chatId);
-      } else {
-        console.log('Chat deleted successfully:', chatId);
-      }
+      const filesToDelete = transaction();
       
       // Delete files asynchronously
-      if (attachments && attachments.length > 0) {
-        setTimeout(() => {
-          for (const file of attachments) {
-            try {
-              if (fs.existsSync(file.path)) {
-                fs.unlinkSync(file.path);
-                console.log('Deleted file:', file.path);
-              }
-            } catch (err) {
-              console.error(`Error deleting file ${file.path}:`, err);
+      setTimeout(() => {
+        for (const file of filesToDelete) {
+          try {
+            if (fs.existsSync(file.path)) {
+              fs.unlinkSync(file.path);
             }
+          } catch (err) {
+            console.error(`Error deleting file ${file.path}:`, err);
           }
-        }, 100);
-      }
+        }
+      }, 100);
       
       return { success: true };
     } catch (error) {
@@ -1071,31 +1067,60 @@ function register(ipcMainInstance) {
   // Settings handlers
   ipcMainInstance.handle('settings:getAll', async () => {
     try {
+      console.log('IPC: получение всех настроек');
       const settings = storageManager.getAllSettings();
-      console.log('IPC: Возвращаем настройки:', settings);
+      console.log('IPC: настройки получены:', settings);
       return settings;
     } catch (error) {
-      console.error('IPC Error getting settings:', error);
+      console.error('IPC: ошибка получения настроек:', error);
       return {};
     }
   });
-  
+
   ipcMainInstance.handle('settings:update', async (event, settings) => {
     try {
-      console.log('IPC: Обновляем настройки:', settings);
-      return storageManager.updateSettings(settings);
+      console.log('IPC: обновление настроек:', settings);
+      const result = storageManager.updateSettings(settings);
+      console.log('IPC: результат обновления настроек:', result);
+      return result;
     } catch (error) {
-      console.error('IPC Error updating settings:', error);
+      console.error('IPC: ошибка обновления настроек:', error);
       return { success: false, error: error.message };
     }
   });
-  
+
   ipcMainInstance.handle('settings:updateSingle', async (event, { key, value }) => {
     try {
-      console.log(`IPC: Обновляем настройку ${key}:`, value);
-      return storageManager.updateSetting(key, value);
+      console.log(`IPC: обновление настройки ${key}:`, value);
+      const result = storageManager.updateSetting(key, value);
+      console.log(`IPC: результат обновления настройки ${key}:`, result);
+      return result;
     } catch (error) {
-      console.error(`IPC Error updating setting ${key}:`, error);
+      console.error(`IPC: ошибка обновления настройки ${key}:`, error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMainInstance.handle('settings:getSingle', async (event, { key, defaultValue }) => {
+    try {
+      console.log(`IPC: получение настройки ${key}`);
+      const value = storageManager.getSetting(key, defaultValue);
+      console.log(`IPC: настройка ${key} = ${value}`);
+      return value;
+    } catch (error) {
+      console.error(`IPC: ошибка получения настройки ${key}:`, error);
+      return defaultValue;
+    }
+  });
+
+  ipcMainInstance.handle('settings:reset', async () => {
+    try {
+      console.log('IPC: сброс настроек');
+      const result = storageManager.resetSettings();
+      console.log('IPC: результат сброса настроек:', result);
+      return result;
+    } catch (error) {
+      console.error('IPC: ошибка сброса настроек:', error);
       return { success: false, error: error.message };
     }
   });
@@ -1104,12 +1129,7 @@ function register(ipcMainInstance) {
   ipcMainInstance.handle('chats:getAll', async () => storageManager.getAllChats());
   ipcMainInstance.handle('chats:create', async (event, chat) => storageManager.createChat(chat));
   ipcMainInstance.handle('chats:update', async (event, chat) => storageManager.updateChat(chat));
-  ipcMainInstance.handle('chats:delete', async (event, chatId) => {
-    console.log('IPC: Deleting chat:', chatId);
-    const result = storageManager.deleteChat(chatId);
-    console.log('IPC: Delete result:', result);
-    return result;
-  });
+  ipcMainInstance.handle('chats:delete', async (event, chatId) => storageManager.deleteChat(chatId));
   ipcMainInstance.handle('chats:searchMessages', async (event, query) => storageManager.searchMessages(query));
 
   // Message handlers

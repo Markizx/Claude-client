@@ -73,9 +73,9 @@ function loadIPCModules() {
     }
     
     // Загружаем модули
+    const storageHandlers = require(path.join(basePath, 'storage.js'));
     const apiHandlers = require(path.join(basePath, 'api.js'));
     const fileHandlers = require(path.join(basePath, 'files.js'));
-    const storageHandlers = require(path.join(basePath, 'storage.js'));
     
     return { apiHandlers, fileHandlers, storageHandlers };
   } catch (error) {
@@ -190,10 +190,14 @@ app.whenReady().then(() => {
   const { apiHandlers, fileHandlers, storageHandlers } = loadIPCModules();
   
   try {
-    // Регистрация обработчиков
-    apiHandlers.register(ipcMain);
-    fileHandlers.register(ipcMain);
+    // Регистрация обработчиков в правильном порядке
+    // Сначала storage, чтобы storageManager был доступен
     storageHandlers.register(ipcMain);
+    
+    // Передаем ссылку на storageManager в api handlers
+    apiHandlers.register(ipcMain, storageHandlers.storageManager);
+    
+    fileHandlers.register(ipcMain);
     
     // Регистрация дополнительных базовых обработчиков
     setupBasicHandlers();

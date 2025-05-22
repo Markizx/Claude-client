@@ -100,59 +100,28 @@ class ClaudeAPIHandler {
     }
   }
 
-  // Get current settings
+  // Получение настроек из storageManager
   async getSettings() {
     try {
-      const settingsStore = new Store({ name: 'claude-desktop-settings' });
-      let settings = settingsStore.get('settings');
-      
-      // Если настройки не найдены в объекте settings, пытаемся получить их напрямую
-      if (!settings || typeof settings !== 'object') {
-        settings = settingsStore.store || {};
+      // Получаем все настройки через IPC от storageManager
+      if (global.storageManager) {
+        return global.storageManager.getAllSettings();
       }
       
-      // Возвращаем настройки с значениями по умолчанию
-      const defaultSettings = {
-        language: 'ru',
-        theme: 'light',
-        autoSave: true,
-        confirmDelete: true,
-        model: 'claude-3-7-sonnet-20250219',
-        maxTokens: 4096,
-        temperature: 0.7,
-        topP: 1.0,
-        messageAnimation: true,
-        compactMode: false,
-        showTimestamps: true,
-        fontSize: 14,
-        soundEnabled: true,
-        desktopNotifications: true,
-        autoBackup: false,
-        backupInterval: 24,
-        maxBackups: 10,
-      };
-      
-      return { ...defaultSettings, ...settings };
-    } catch (error) {
-      console.error('Error getting settings:', error);
+      // Fallback - настройки по умолчанию
       return {
-        language: 'ru',
-        theme: 'light',
-        autoSave: true,
-        confirmDelete: true,
         model: 'claude-3-7-sonnet-20250219',
         maxTokens: 4096,
         temperature: 0.7,
-        topP: 1.0,
-        messageAnimation: true,
-        compactMode: false,
-        showTimestamps: true,
-        fontSize: 14,
-        soundEnabled: true,
-        desktopNotifications: true,
-        autoBackup: false,
-        backupInterval: 24,
-        maxBackups: 10,
+        topP: 1.0
+      };
+    } catch (error) {
+      console.error('Error getting settings for API:', error);
+      return {
+        model: 'claude-3-7-sonnet-20250219',
+        maxTokens: 4096,
+        temperature: 0.7,
+        topP: 1.0
       };
     }
   }
@@ -165,70 +134,12 @@ class ClaudeAPIHandler {
       throw new Error('Claude API key is not configured. Please update your settings.');
     }
 
-    // Получаем текущие настройки
-    const settings = await this.getSettings();
-
     // Prepare message content array
     const messageContent = [];
     
-    // Добавляем контекст файлов проекта в начало, если есть
-    const projectFiles = attachments.filter(att => att.isProjectFile);
-    const regularFiles = attachments.filter(att => !att.isProjectFile);
-    
-    if (projectFiles.length > 0) {
-      messageContent.push({
-        type: 'text',
-        text: '=== КОНТЕКСТ ПРОЕКТА ==='
-      });
-      
-      for (const projectFile of projectFiles) {
-        try {
-          if (!projectFile.path || !fs.existsSync(projectFile.path)) {
-            console.warn(`Project file not found: ${projectFile.path}`);
-            continue;
-          }
-          
-          const fileBuffer = fs.readFileSync(projectFile.path);
-          const mediaType = this.getMediaType(projectFile.type, projectFile.name);
-          
-          if (this.isImageFile(mediaType)) {
-            messageContent.push({
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: mediaType,
-                data: fileBuffer.toString('base64')
-              }
-            });
-          } else {
-            try {
-              const textContent = fileBuffer.toString('utf8');
-              messageContent.push({
-                type: 'text',
-                text: `### Файл проекта: ${projectFile.name} ###\n\n${textContent}\n\n### Конец файла ###`
-              });
-            } catch (error) {
-              console.error(`Error reading project file ${projectFile.name}:`, error);
-              messageContent.push({
-                type: 'text',
-                text: `[Файл проекта: ${projectFile.name}, тип: ${mediaType}, размер: ${fileBuffer.length} байт - не удалось прочитать как текст]`
-              });
-            }
-          }
-        } catch (fileError) {
-          console.error(`Error processing project file ${projectFile.name}:`, fileError);
-        }
-      }
-      
-      messageContent.push({
-        type: 'text',
-        text: '=== КОНЕЦ КОНТЕКСТА ПРОЕКТА ===\n\n'
-      });
-    }
-    
-    // Add regular attachments to the message
-    if (regularFiles && regularFiles.length > 0) {
-      for (const attachment of regularFiles) {
+    // Add attachments to the message
+    if (attachments && attachments.length > 0) {
+      for (const attachment of attachments) {
         try {
           // Read the file
           if (!attachment.path || !fs.existsSync(attachment.path)) {
@@ -322,9 +233,7 @@ class ClaudeAPIHandler {
     });
     
     // Системное сообщение
-    const systemPrompt = `Ты полезный ассистент Claude. Если пользователь прикрепил файлы, анализируй их содержимое и отвечай на основе этих данных.
-
-${projectFiles.length > 0 ? 'ВАЖНО: В начале сообщения приведен контекст проекта - это файлы проекта, которые пользователь выбрал для контекста. Используй эту информацию при ответе.' : ''}
+    const systemPrompt = `Ты полезный ассистент Claude. Если пользователь прикрепил файлы, анализируй их содержимое и отвечай на основе этих данных. 
 
 Правила для артефактов:
 - Используй тег <artifact> для создания кода, документов и визуализаций
@@ -338,7 +247,11 @@ ${projectFiles.length > 0 ? 'ВАЖНО: В начале сообщения пр
 
 Всегда отвечай на русском языке, если не попросят иначе.`;
     
-    // Используем настройки из контекста
+    // Получаем настройки
+    const settings = await this.getSettings();
+    console.log('Используем настройки для API:', settings);
+    
+    // Используем настройки или значения по умолчанию
     const modelName = settings.model || this.defaultModel;
     const maxTokens = settings.maxTokens || 4096;
     const temperature = settings.temperature || 0.7;
@@ -467,7 +380,12 @@ ${projectFiles.length > 0 ? 'ВАЖНО: В начале сообщения пр
 const apiHandler = new ClaudeAPIHandler();
 
 // Функция для регистрации обработчиков IPC
-function register(ipcMainInstance) {
+function register(ipcMainInstance, storageManagerRef = null) {
+  // Сохраняем ссылку на storageManager для доступа к настройкам
+  if (storageManagerRef) {
+    global.storageManager = storageManagerRef;
+  }
+
   // API Key handling
   ipcMainInstance.handle('auth:getApiKey', async () => {
     try {

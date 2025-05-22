@@ -99,9 +99,60 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('api:sendToClaudeAI', { content, attachments, history }),
   
   // Settings operations
-  getSettings: () => ipcRenderer.invoke('settings:getAll'),
-  updateSettings: (settings) => ipcRenderer.invoke('settings:update', settings),
-  updateSetting: (key, value) => ipcRenderer.invoke('settings:updateSingle', { key, value }),
+  getSettings: () => {
+    console.log('preload: получение настроек');
+    return ipcRenderer.invoke('settings:getAll').then(result => {
+      console.log('preload: настройки получены:', result);
+      return result;
+    }).catch(error => {
+      console.error('preload: ошибка получения настроек:', error);
+      throw error;
+    });
+  },
+  
+  updateSettings: (settings) => {
+    console.log('preload: обновление настроек:', settings);
+    return ipcRenderer.invoke('settings:update', settings).then(result => {
+      console.log('preload: результат обновления настроек:', result);
+      return result;
+    }).catch(error => {
+      console.error('preload: ошибка обновления настроек:', error);
+      throw error;
+    });
+  },
+  
+  updateSetting: (key, value) => {
+    console.log(`preload: обновление настройки ${key}:`, value);
+    return ipcRenderer.invoke('settings:updateSingle', { key, value }).then(result => {
+      console.log(`preload: результат обновления настройки ${key}:`, result);
+      return result;
+    }).catch(error => {
+      console.error(`preload: ошибка обновления настройки ${key}:`, error);
+      throw error;
+    });
+  },
+  
+  getSetting: (key, defaultValue) => {
+    console.log(`preload: получение настройки ${key}`);
+    return ipcRenderer.invoke('settings:getSingle', { key, defaultValue }).then(result => {
+      console.log(`preload: настройка ${key} =`, result);
+      return result;
+    }).catch(error => {
+      console.error(`preload: ошибка получения настройки ${key}:`, error);
+      return defaultValue;
+    });
+  },
+  
+  resetSettings: () => {
+    console.log('preload: сброс настроек');
+    return ipcRenderer.invoke('settings:reset').then(result => {
+      console.log('preload: результат сброса настроек:', result);
+      return result;
+    }).catch(error => {
+      console.error('preload: ошибка сброса настроек:', error);
+      throw error;
+    });
+  },
   
   // Database operations
   backupDatabase: (path) => ipcRenderer.invoke('db:backup', path),
@@ -132,3 +183,4 @@ contextBridge.exposeInMainWorld('systemInfo', {
 
 // Debugging info
 console.log('Preload script executed successfully');
+console.log('electronAPI exposed with settings methods');
