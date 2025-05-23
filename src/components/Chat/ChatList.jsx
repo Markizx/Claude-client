@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   List,
@@ -6,7 +6,6 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
-  ListItemSecondaryAction,
   IconButton,
   Typography,
   Box,
@@ -27,6 +26,83 @@ import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { useChat } from '../../contexts/ChatContext';
 
+// Мемоизированный компонент чата
+const ChatListItem = React.memo(({ 
+  chat, 
+  isSelected, 
+  onChatClick, 
+  onMenuClick,
+  formatDate 
+}) => {
+  const chatTitle = chat.title || 'Новый чат';
+  const date = formatDate(chat.updated_at) || formatDate(chat.created_at) || '';
+  
+  return (
+    <ListItem disablePadding>
+      <ListItemButton
+        onClick={() => onChatClick(chat.id)}
+        selected={isSelected}
+        sx={{
+          borderRadius: 1,
+          mx: 1,
+          mb: 0.5,
+          position: 'relative',
+          '&.Mui-selected': {
+            backgroundColor: 'primary.main',
+            color: 'primary.contrastText',
+            '&:hover': {
+              backgroundColor: 'primary.dark',
+            },
+          },
+        }}
+      >
+        <ListItemIcon sx={{ minWidth: 36 }}>
+          <ChatIcon fontSize="small" />
+        </ListItemIcon>
+        <ListItemText
+          primary={chatTitle}
+          secondary={date}
+          primaryTypographyProps={{
+            noWrap: true,
+            sx: { fontSize: '0.9rem', pr: 5 }
+          }}
+          secondaryTypographyProps={{
+            noWrap: true,
+            sx: { fontSize: '0.75rem' }
+          }}
+        />
+        
+        <Box sx={{
+          position: 'absolute',
+          right: 8,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          zIndex: 10
+        }}>
+          <Tooltip title="Действия">
+            <IconButton
+              size="small"
+              onClick={(e) => onMenuClick(e, chat)}
+              sx={{ 
+                opacity: 0.7, 
+                '&:hover': { 
+                  opacity: 1,
+                  bgcolor: 'rgba(255,255,255,0.2)'
+                },
+                bgcolor: 'rgba(255,255,255,0.1)'
+              }}
+            >
+              <MoreVertIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Box>
+      </ListItemButton>
+    </ListItem>
+  );
+});
+
+ChatListItem.displayName = 'ChatListItem';
+
 const ChatList = ({ chats, currentChatId }) => {
   const navigate = useNavigate();
   const { updateChat, deleteChat } = useChat();
@@ -34,115 +110,12 @@ const ChatList = ({ chats, currentChatId }) => {
   const [selectedChat, setSelectedChat] = useState(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [chatToDelete, setChatToDelete] = useState(null); // НОВОЕ: отдельное состояние для чата к удалению
+  const [chatToDelete, setChatToDelete] = useState(null);
   const [newTitle, setNewTitle] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const handleMenuClick = (event, chat) => {
-    // КРИТИЧНО: Останавливаем всплытие события
-    event.stopPropagation();
-    event.preventDefault();
-    
-    console.log('Opening menu for chat:', chat.id);
-    setSelectedChat(chat);
-    setAnchorEl(event.currentTarget);
-  };
-
-  const handleMenuClose = () => {
-    setAnchorEl(null);
-    // НЕ очищаем selectedChat здесь, чтобы диалоги работали корректно
-  };
-
-  const handleChatClick = (chatId) => {
-    // Проверяем, не открыто ли меню
-    if (anchorEl) {
-      return; // Игнорируем клик если меню открыто
-    }
-    
-    console.log('Navigating to chat:', chatId);
-    navigate(`/chat/${chatId}`);
-  };
-
-  const handleEdit = () => {
-    if (selectedChat) {
-      console.log('Editing chat:', selectedChat.id);
-      setNewTitle(selectedChat.title);
-      setEditDialogOpen(true);
-    }
-    handleMenuClose();
-  };
-
-  const handleDelete = () => {
-    if (selectedChat) {
-      console.log('Delete action for chat:', selectedChat.id);
-      setChatToDelete(selectedChat); // ИСПРАВЛЕНО: сохраняем чат для удаления в отдельном состоянии
-      setDeleteDialogOpen(true);
-    }
-    handleMenuClose();
-  };
-
-  const handleEditSave = async () => {
-    if (selectedChat && newTitle.trim()) {
-      console.log('Saving chat title:', newTitle);
-      try {
-        await updateChat(selectedChat.id, { title: newTitle.trim() });
-        console.log('Chat title updated successfully');
-      } catch (error) {
-        console.error('Error updating chat title:', error);
-      }
-    }
-    setEditDialogOpen(false);
-    setSelectedChat(null); // Очищаем только после завершения операции
-    setNewTitle('');
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (!chatToDelete) { // ИСПРАВЛЕНО: используем chatToDelete вместо selectedChat
-      console.error('No chat selected for deletion');
-      return;
-    }
-
-    setIsDeleting(true);
-    console.log('Confirming delete for chat:', chatToDelete.id);
-    
-    try {
-      const success = await deleteChat(chatToDelete.id);
-      console.log('Delete result:', success);
-      
-      if (success) {
-        // Если удаляем текущий активный чат, переходим к новому чату
-        if (currentChatId === chatToDelete.id) {
-          console.log('Deleted current active chat, navigating to new chat');
-          navigate('/chat/new');
-        }
-        
-        console.log('Chat deleted successfully');
-      } else {
-        console.error('Failed to delete chat');
-      }
-    } catch (error) {
-      console.error('Error deleting chat:', error);
-    } finally {
-      setIsDeleting(false);
-      setDeleteDialogOpen(false);
-      setChatToDelete(null); // ИСПРАВЛЕНО: очищаем chatToDelete
-      setSelectedChat(null); // Очищаем selectedChat
-    }
-  };
-
-  const handleDeleteCancel = () => {
-    setDeleteDialogOpen(false);
-    setChatToDelete(null); // ИСПРАВЛЕНО: очищаем chatToDelete при отмене
-    setSelectedChat(null);
-  };
-
-  const handleEditCancel = () => {
-    setEditDialogOpen(false);
-    setSelectedChat(null);
-    setNewTitle('');
-  };
-
-  const formatDate = (dateString) => {
+  // Мемоизированная функция форматирования даты
+  const formatDate = useCallback((dateString) => {
     try {
       if (!dateString || dateString === 'Invalid Date') {
         return '';
@@ -166,7 +139,107 @@ const ChatList = ({ chats, currentChatId }) => {
       console.error('Error formatting date:', error);
       return '';
     }
-  };
+  }, []);
+
+  // Оптимизированные обработчики событий
+  const handleMenuClick = useCallback((event, chat) => {
+    event.stopPropagation();
+    event.preventDefault();
+    
+    setSelectedChat(chat);
+    setAnchorEl(event.currentTarget);
+  }, []);
+
+  const handleMenuClose = useCallback(() => {
+    setAnchorEl(null);
+  }, []);
+
+  const handleChatClick = useCallback((chatId) => {
+    if (anchorEl) return; // Игнорируем клик если меню открыто
+    navigate(`/chat/${chatId}`);
+  }, [navigate, anchorEl]);
+
+  const handleEdit = useCallback(() => {
+    if (selectedChat) {
+      setNewTitle(selectedChat.title);
+      setEditDialogOpen(true);
+    }
+    handleMenuClose();
+  }, [selectedChat, handleMenuClose]);
+
+  const handleDelete = useCallback(() => {
+    if (selectedChat) {
+      setChatToDelete(selectedChat);
+      setDeleteDialogOpen(true);
+    }
+    handleMenuClose();
+  }, [selectedChat, handleMenuClose]);
+
+  const handleEditSave = useCallback(async () => {
+    if (selectedChat && newTitle.trim()) {
+      try {
+        await updateChat(selectedChat.id, { title: newTitle.trim() });
+      } catch (error) {
+        console.error('Error updating chat title:', error);
+      }
+    }
+    setEditDialogOpen(false);
+    setSelectedChat(null);
+    setNewTitle('');
+  }, [selectedChat, newTitle, updateChat]);
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!chatToDelete) return;
+
+    setIsDeleting(true);
+    
+    try {
+      const success = await deleteChat(chatToDelete.id);
+      
+      if (success && currentChatId === chatToDelete.id) {
+        navigate('/chat/new');
+      }
+    } catch (error) {
+      console.error('Error deleting chat:', error);
+    } finally {
+      setIsDeleting(false);
+      setDeleteDialogOpen(false);
+      setChatToDelete(null);
+      setSelectedChat(null);
+    }
+  }, [chatToDelete, deleteChat, currentChatId, navigate]);
+
+  const handleDeleteCancel = useCallback(() => {
+    setDeleteDialogOpen(false);
+    setChatToDelete(null);
+    setSelectedChat(null);
+  }, []);
+
+  const handleEditCancel = useCallback(() => {
+    setEditDialogOpen(false);
+    setSelectedChat(null);
+    setNewTitle('');
+  }, []);
+
+  // Мемоизированный список чатов
+  const chatItems = useMemo(() => {
+    if (!chats || chats.length === 0) return null;
+
+    return chats.map((chat) => {
+      const isSelected = currentChatId === (chat.id ? chat.id.toString() : '');
+      
+      return (
+        <ChatListItem
+          key={chat.id}
+          chat={chat}
+          isSelected={isSelected}
+          onChatClick={handleChatClick}
+          onMenuClick={handleMenuClick}
+          formatDate={formatDate}
+        />
+      );
+    });
+  }, [chats, currentChatId, handleChatClick, handleMenuClick, formatDate]);
 
   if (!chats || chats.length === 0) {
     return (
@@ -181,76 +254,7 @@ const ChatList = ({ chats, currentChatId }) => {
   return (
     <>
       <List sx={{ p: 0 }}>
-        {chats.map((chat) => {
-          const isSelected = currentChatId === (chat.id ? chat.id.toString() : '');
-          const chatTitle = chat.title || 'Новый чат';
-          const date = formatDate(chat.updated_at) || formatDate(chat.created_at) || '';
-          
-          return (
-            <ListItem key={chat.id} disablePadding>
-              <ListItemButton
-                onClick={() => handleChatClick(chat.id)}
-                selected={isSelected}
-                sx={{
-                  borderRadius: 1,
-                  mx: 1,
-                  mb: 0.5,
-                  position: 'relative',
-                  '&.Mui-selected': {
-                    backgroundColor: 'primary.main',
-                    color: 'primary.contrastText',
-                    '&:hover': {
-                      backgroundColor: 'primary.dark',
-                    },
-                  },
-                }}
-              >
-                <ListItemIcon sx={{ minWidth: 36 }}>
-                  <ChatIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText
-                  primary={chatTitle}
-                  secondary={date}
-                  primaryTypographyProps={{
-                    noWrap: true,
-                    sx: { fontSize: '0.9rem', pr: 5 }
-                  }}
-                  secondaryTypographyProps={{
-                    noWrap: true,
-                    sx: { fontSize: '0.75rem' }
-                  }}
-                />
-                
-                <Box
-                  sx={{
-                    position: 'absolute',
-                    right: 8,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    zIndex: 10
-                  }}
-                >
-                  <Tooltip title="Действия">
-                    <IconButton
-                      size="small"
-                      onClick={(e) => handleMenuClick(e, chat)}
-                      sx={{ 
-                        opacity: 0.7, 
-                        '&:hover': { 
-                          opacity: 1,
-                          bgcolor: 'rgba(255,255,255,0.2)'
-                        },
-                        bgcolor: 'rgba(255,255,255,0.1)'
-                      }}
-                    >
-                      <MoreVertIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </Box>
-              </ListItemButton>
-            </ListItem>
-          );
-        })}
+        {chatItems}
       </List>
 
       <Menu
@@ -262,20 +266,15 @@ const ChatList = ({ chats, currentChatId }) => {
         onClick={(e) => e.stopPropagation()}
       >
         <MenuItem onClick={handleEdit}>
-          <ListItemIcon>
-            <EditIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>Переименовать</ListItemText>
+          <EditIcon fontSize="small" sx={{ mr: 1 }} />
+          Переименовать
         </MenuItem>
         <MenuItem onClick={handleDelete} sx={{ color: 'error.main' }}>
-          <ListItemIcon>
-            <DeleteIcon fontSize="small" color="error" />
-          </ListItemIcon>
-          <ListItemText>Удалить</ListItemText>
+          <DeleteIcon fontSize="small" color="error" sx={{ mr: 1 }} />
+          Удалить
         </MenuItem>
       </Menu>
 
-      {/* Диалог редактирования */}
       <Dialog 
         open={editDialogOpen} 
         onClose={handleEditCancel}
@@ -308,7 +307,6 @@ const ChatList = ({ chats, currentChatId }) => {
         </DialogActions>
       </Dialog>
 
-      {/* Диалог удаления */}
       <Dialog 
         open={deleteDialogOpen} 
         onClose={!isDeleting ? handleDeleteCancel : undefined}
@@ -343,4 +341,4 @@ const ChatList = ({ chats, currentChatId }) => {
   );
 };
 
-export default ChatList;
+export default React.memo(ChatList);

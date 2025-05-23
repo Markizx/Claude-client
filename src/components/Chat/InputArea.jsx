@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
   Box,
   TextField,
@@ -26,7 +26,6 @@ import StopIcon from '@mui/icons-material/Stop';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { useDropzone } from 'react-dropzone';
-import { useProject } from '../../contexts/ProjectContext';
 
 const InputArea = ({ 
   onSendMessage, 
@@ -42,52 +41,24 @@ const InputArea = ({
   const [recordingTime, setRecordingTime] = useState(0);
   const [error, setError] = useState('');
   const [projectFiles, setProjectFiles] = useState([]);
-  const [projectFilesExpanded, setProjectFilesExpanded] = useState(true); // ДОБАВЛЕНО: состояние сворачивания
+  const [projectFilesExpanded, setProjectFilesExpanded] = useState(true);
   const fileInputRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const recordingIntervalRef = useRef(null);
 
-  // ОТЛАДКА: следим за изменениями проекта
-  useEffect(() => {
-    if (selectedProjectId) {
-      console.log('=== ОТЛАДКА ПРОЕКТА ===');
-      console.log('Выбранный проект ID:', selectedProjectId);
-      
-      const selectedProject = projects?.find(p => p.id === selectedProjectId);
-      console.log('Найденный проект:', selectedProject);
-      
-      if (selectedProject) {
-        console.log('Файлы проекта в объекте:', selectedProject.files);
-        
-        // Получаем файлы проекта
-        getProjectFiles(selectedProjectId).then(files => {
-          console.log('Файлы через getProjectFiles:', files);
-          setProjectFiles(files);
-        });
-      } else {
-        setProjectFiles([]);
-      }
-    } else {
-      setProjectFiles([]);
-    }
-  }, [selectedProjectId, projects]);
+  // Мемоизированный активный проект
+  const activeProject = useMemo(() => {
+    return projects?.find(p => p.id === selectedProjectId) || null;
+  }, [projects, selectedProjectId]);
 
-  // Получаем файлы выбранного проекта - ИСПРАВЛЕННАЯ ВЕРСИЯ
+  // Оптимизированное получение файлов проекта
   const getProjectFiles = useCallback(async (projectId) => {
-    if (!projectId) {
-      console.log('getProjectFiles: нет projectId');
-      return [];
-    }
+    if (!projectId) return [];
     
     try {
-      console.log('getProjectFiles: получаем файлы для проекта', projectId);
-      
-      // ИСПРАВЛЕНО: используем projects из пропсов для быстрого доступа
-      const selectedProject = projects?.find(p => p.id === projectId);
-      if (selectedProject && selectedProject.files && selectedProject.files.length > 0) {
-        console.log('getProjectFiles: используем файлы из props:', selectedProject.files);
-        
-        const formattedFiles = selectedProject.files.map(file => ({
+      // Сначала пробуем получить из activeProject
+      if (activeProject && activeProject.id === projectId && activeProject.files?.length > 0) {
+        return activeProject.files.map(file => ({
           id: file.id,
           name: file.name,
           path: file.path,
@@ -95,18 +66,13 @@ const InputArea = ({
           size: file.size,
           isProjectFile: true
         }));
-        
-        return formattedFiles;
       }
       
-      // Если файлов нет в props, пытаемся получить через API
+      // Если нет в кеше, получаем через API
       if (window.electronAPI) {
-        console.log('getProjectFiles: получаем через API');
         const projectFiles = await window.electronAPI.getProjectFiles(projectId);
-        console.log('getProjectFiles: получено через API:', projectFiles?.length || 0);
-        
-        if (projectFiles && projectFiles.length > 0) {
-          const formattedFiles = projectFiles.map(file => ({
+        if (projectFiles?.length > 0) {
+          return projectFiles.map(file => ({
             id: file.id,
             name: file.name,
             path: file.path,
@@ -114,46 +80,52 @@ const InputArea = ({
             size: file.size,
             isProjectFile: true
           }));
-          
-          console.log('getProjectFiles: отформатированные файлы:', formattedFiles);
-          return formattedFiles;
         }
       }
       
-      console.log('getProjectFiles: файлы не найдены');
       return [];
     } catch (error) {
       console.error('Ошибка получения файлов проекта:', error);
       return [];
     }
-  }, [projects]);
+  }, [activeProject]);
 
-  // Обработка drag and drop
+  // Оптимизированное обновление файлов проекта
+  useEffect(() => {
+    let cancelled = false;
+    
+    if (selectedProjectId) {
+      getProjectFiles(selectedProjectId).then(files => {
+        if (!cancelled) {
+          setProjectFiles(files);
+        }
+      });
+    } else {
+      setProjectFiles([]);
+    }
+    
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProjectId, getProjectFiles]);
+
+  // Обработка drag and drop с debounce
   const onDrop = useCallback((acceptedFiles, rejectedFiles) => {
-    if (rejectedFiles && rejectedFiles.length > 0) {
-      setError(`Некоторые файлы были отклонены. Максимальный размер файла: 50MB`);
-      setTimeout(() => setError(''), 5000);
+    if (rejectedFiles?.length > 0) {
+      setError(`Некоторые файлы были отклонены. Максимальный размер: 50MB`);
+      setTimeout(() => setError(''), 3000);
     }
 
-    if (acceptedFiles && acceptedFiles.length > 0) {
-      acceptedFiles.forEach(file => {
-        if (file.size > 50 * 1024 * 1024) {
-          setError(`Файл ${file.name} слишком большой (максимум 50MB)`);
-          setTimeout(() => setError(''), 5000);
-          return;
-        }
-
-        const fileObj = {
-          id: Date.now() + Math.random(),
-          name: file.name,
-          size: file.size,
-          type: file.type || 'application/octet-stream',
-          file: file
-        };
-
-        console.log('Файл загружен:', fileObj);
-        setFiles(prev => [...prev, fileObj]);
-      });
+    if (acceptedFiles?.length > 0) {
+      const newFiles = acceptedFiles.map(file => ({
+        id: Date.now() + Math.random(),
+        name: file.name,
+        size: file.size,
+        type: file.type || 'application/octet-stream',
+        file: file
+      }));
+      
+      setFiles(prev => [...prev, ...newFiles]);
     }
   }, []);
 
@@ -165,212 +137,131 @@ const InputArea = ({
     noKeyboard: true
   });
 
-  // Обработка отправки формы - ИСПРАВЛЕННАЯ ВЕРСИЯ
-  const handleSubmit = async (event) => {
-    if (event && typeof event.preventDefault === 'function') {
+  // Оптимизированная отправка с немедленной очисткой поля
+  const handleSubmit = useCallback(async (event) => {
+    if (event?.preventDefault) {
       event.preventDefault();
     }
     
-    if (!message.trim() && files.length === 0) {
-      return;
-    }
-
+    if (!message.trim() && files.length === 0) return;
+    
+    // НЕМЕДЛЕННО очищаем поле ввода для лучшего UX
+    const messageToSend = message.trim();
+    const filesToSend = [...files];
+    const projectFilesToSend = [...projectFiles];
+    
+    setMessage('');
+    setFiles([]);
+    setError('');
+    
     try {
-      setError('');
-      
-      console.log('=== ОТЛАДКА ОТПРАВКИ ===');
-      console.log('selectedProjectId:', selectedProjectId);
-      console.log('projectFiles в состоянии:', projectFiles);
-      console.log('projects:', projects);
-
-      // ИСПРАВЛЕНО: используем файлы из локального состояния
-      let currentProjectFiles = projectFiles;
-      
-      // Если файлов нет в состоянии, пытаемся получить еще раз
-      if (selectedProjectId && (!currentProjectFiles || currentProjectFiles.length === 0)) {
-        console.log('handleSubmit: получаем файлы проекта повторно');
-        currentProjectFiles = await getProjectFiles(selectedProjectId);
-        console.log('handleSubmit: получено файлов проекта:', currentProjectFiles.length);
-      }
-
-      // Подготавливаем файлы сообщения для отправки
-      const filesToSend = await Promise.all(
-        files.map(async (fileData) => {
-          try {
-            if (fileData.path) {
+      // Подготавливаем файлы для отправки
+      const uploadedFiles = await Promise.all(
+        filesToSend.map(async (fileData) => {
+          if (fileData.path) {
+            return {
+              name: fileData.name,
+              size: fileData.size,
+              type: fileData.type,
+              path: fileData.path
+            };
+          }
+          
+          if (fileData.file && window.electronAPI) {
+            const result = await window.electronAPI.uploadFile(fileData.file);
+            if (result?.success) {
               return {
                 name: fileData.name,
                 size: fileData.size,
                 type: fileData.type,
-                path: fileData.path
+                path: result.path
               };
             }
-            
-            if (fileData.file && window.electronAPI) {
-              console.log('Загрузка файла через Electron API:', fileData.name);
-              
-              try {
-                const result = await window.electronAPI.uploadFile(fileData.file);
-                
-                if (result && result.success) {
-                  return {
-                    name: fileData.name,
-                    size: fileData.size,
-                    type: fileData.type,
-                    path: result.path
-                  };
-                } else {
-                  throw new Error(result?.error || 'Ошибка загрузки файла');
-                }
-              } catch (uploadError) {
-                console.error('Ошибка загрузки файла:', uploadError);
-                setError(`Ошибка загрузки файла ${fileData.name}: ${uploadError.message}`);
-                return null;
-              }
-            }
-            
-            return null;
-          } catch (fileError) {
-            console.error('Ошибка при обработке файла:', fileError);
-            return null;
           }
+          return null;
         })
       );
 
-      const validFiles = filesToSend.filter(file => file !== null);
-
-      console.log('handleSubmit: отправляем сообщение с файлами:', {
-        messageFiles: validFiles.length,
-        projectFiles: currentProjectFiles.length,
-        projectFileNames: currentProjectFiles.map(f => f.name)
-      });
-
-      // ИСПРАВЛЕНО: передаем currentProjectFiles
-      await onSendMessage(message, validFiles, currentProjectFiles);
+      const validFiles = uploadedFiles.filter(file => file !== null);
+      await onSendMessage(messageToSend, validFiles, projectFilesToSend);
       
-      // Очищаем форму после успешной отправки
-      setMessage('');
-      setFiles([]);
-      setError('');
-      
-      files.forEach(file => {
-        if (file.preview && file.preview.startsWith('blob:')) {
-          URL.revokeObjectURL(file.preview);
-        }
-      });
     } catch (err) {
-      setError('Ошибка при отправке сообщения: ' + (err.message || err));
+      setError('Ошибка при отправке: ' + (err.message || err));
+      // Восстанавливаем данные при ошибке
+      setMessage(messageToSend);
+      setFiles(filesToSend);
       setTimeout(() => setError(''), 5000);
     }
-  };
+  }, [message, files, projectFiles, onSendMessage]);
 
-  // Обработка нажатия Enter
-  const handleKeyDown = (event) => {
+  // Оптимизированные обработчики событий
+  const handleKeyDown = useCallback((event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       handleSubmit();
     }
-  };
+  }, [handleSubmit]);
 
-  // Обработка изменения текста
-  const handleMessageChange = (e) => {
+  const handleMessageChange = useCallback((e) => {
     setMessage(e.target.value);
-    setError('');
-  };
+    if (error) setError('');
+  }, [error]);
 
-  // Обработка выбора файлов через диалог
-  const handleFileSelect = async () => {
+  const handleFileSelect = useCallback(async () => {
     try {
-      if (!window.electronAPI) {
-        setError('Выбор файлов недоступен в браузерной версии');
-        setTimeout(() => setError(''), 5000);
-        return;
-      }
+      if (!window.electronAPI) return;
 
       const result = await window.electronAPI.openFileDialog();
-      
-      if (result && result.success && result.files && result.files.length > 0) {
+      if (result?.success && result.files?.length > 0) {
         const newFiles = result.files.map(file => ({
           id: Date.now() + Math.random(),
           name: file.name,
           size: file.size,
           type: file.type || 'application/octet-stream',
-          path: file.path,
-          preview: file.type && file.type.startsWith('image/') ? `file://${file.path}` : null
+          path: file.path
         }));
         
         setFiles(prev => [...prev, ...newFiles]);
       }
     } catch (error) {
-      console.error('Ошибка при выборе файлов:', error);
-      setError('Ошибка при выборе файлов: ' + (error.message || error));
-      setTimeout(() => setError(''), 5000);
+      setError('Ошибка при выборе файлов');
+      setTimeout(() => setError(''), 3000);
     }
-  };
+  }, []);
 
-  // Обработка удаления файла
-  const handleRemoveFile = (index) => {
-    setFiles(prev => {
-      const newFiles = [...prev];
-      const removedFile = newFiles[index];
-      
-      if (removedFile.preview && removedFile.preview.startsWith('blob:')) {
-        URL.revokeObjectURL(removedFile.preview);
-      }
-      
-      newFiles.splice(index, 1);
-      return newFiles;
-    });
-  };
+  const handleRemoveFile = useCallback((index) => {
+    setFiles(prev => prev.filter((_, i) => i !== index));
+  }, []);
 
-  // Обработка изменения проекта
-  const handleProjectChange = (e) => {
-    if (onProjectSelect) {
-      onProjectSelect(e.target.value);
-    }
-  };
+  const handleProjectChange = useCallback((e) => {
+    onProjectSelect?.(e.target.value);
+  }, [onProjectSelect]);
 
-  // ДОБАВЛЕНО: переключение сворачивания файлов проекта
-  const toggleProjectFiles = () => {
-    setProjectFilesExpanded(!projectFilesExpanded);
-  };
+  const toggleProjectFiles = useCallback(() => {
+    setProjectFilesExpanded(prev => !prev);
+  }, []);
 
-  // Голосовой ввод
-  const handleVoiceInput = (e) => {
-    if (e && typeof e.stopPropagation === 'function') {
-      e.stopPropagation();
-    }
+  const handleVoiceInput = useCallback((e) => {
+    e?.stopPropagation?.();
     
     if (!isRecording) {
-      try {
-        navigator.mediaDevices.getUserMedia({ audio: true })
-          .then(stream => {
-            const mediaRecorder = new MediaRecorder(stream);
-            mediaRecorderRef.current = mediaRecorder;
-            
-            const chunks = [];
-            mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
-            mediaRecorder.onstop = () => {
-              const blob = new Blob(chunks, { type: 'audio/wav' });
-              console.log('Audio recorded:', blob);
-            };
-            
-            mediaRecorder.start();
-            setIsRecording(true);
-            setRecordingTime(0);
-            
-            recordingIntervalRef.current = setInterval(() => {
-              setRecordingTime(prev => prev + 1);
-            }, 1000);
-          })
-          .catch(error => {
-            setError('Ошибка доступа к микрофону: ' + (error.message || error));
-            setTimeout(() => setError(''), 5000);
-          });
-      } catch (error) {
-        setError('Ошибка доступа к микрофону: ' + (error.message || error));
-        setTimeout(() => setError(''), 5000);
-      }
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(stream => {
+          const mediaRecorder = new MediaRecorder(stream);
+          mediaRecorderRef.current = mediaRecorder;
+          
+          mediaRecorder.start();
+          setIsRecording(true);
+          setRecordingTime(0);
+          
+          recordingIntervalRef.current = setInterval(() => {
+            setRecordingTime(prev => prev + 1);
+          }, 1000);
+        })
+        .catch(() => {
+          setError('Ошибка доступа к микрофону');
+          setTimeout(() => setError(''), 3000);
+        });
     } else {
       if (mediaRecorderRef.current) {
         mediaRecorderRef.current.stop();
@@ -379,24 +270,18 @@ const InputArea = ({
       setIsRecording(false);
       clearInterval(recordingIntervalRef.current);
     }
-  };
+  }, [isRecording]);
 
-  // Форматирование времени записи
-  const formatRecordingTime = (seconds) => {
+  const formatRecordingTime = useCallback((seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
+  }, []);
 
   return (
     <Box 
       component="form" 
-      onSubmit={(e) => {
-        if (e && typeof e.preventDefault === 'function') {
-          e.preventDefault();
-        }
-        handleSubmit(e);
-      }}
+      onSubmit={handleSubmit}
       {...getRootProps()}
       sx={{ 
         position: 'relative',
@@ -410,45 +295,35 @@ const InputArea = ({
       <input {...getInputProps()} />
       
       {isDragActive && (
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            bgcolor: 'rgba(0, 0, 0, 0.05)',
-            borderRadius: 2,
-            zIndex: 10,
-          }}
-        >
+        <Box sx={{
+          position: 'absolute',
+          top: 0, left: 0, right: 0, bottom: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          bgcolor: 'rgba(0, 0, 0, 0.05)',
+          borderRadius: 2,
+          zIndex: 10,
+        }}>
           <Typography variant="h6" color="primary">
             Перетащите файлы сюда
           </Typography>
         </Box>
       )}
 
-      {/* Ошибки */}
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
           {error}
         </Alert>
       )}
 
-      {/* Выбор проекта */}
-      {projects && projects.length > 0 && (
+      {projects?.length > 0 && (
         <FormControl fullWidth variant="outlined" size="small" sx={{ mb: 2 }}>
-          <InputLabel id="project-select-label">Проект (контекст)</InputLabel>
+          <InputLabel>Проект (контекст)</InputLabel>
           <Select
-            labelId="project-select-label"
-            id="project-select"
             value={selectedProjectId || ''}
             onChange={handleProjectChange}
             label="Проект (контекст)"
-            sx={{ borderRadius: 2 }}
             disabled={disabled || loading}
           >
             <MenuItem value="">
@@ -459,20 +334,12 @@ const InputArea = ({
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <FolderIcon fontSize="small" />
                   {project.title || project.name}
-                  {/* ИСПРАВЛЕНО: показываем количество файлов из состояния */}
-                  {selectedProjectId === project.id && projectFiles.length > 0 && (
-                    <Chip 
-                      label={`${projectFiles.length} файлов`}
-                      size="small"
-                      variant="outlined"
-                      color="primary"
-                    />
-                  )}
-                  {selectedProjectId !== project.id && project.files && project.files.length > 0 && (
+                  {project.files?.length > 0 && (
                     <Chip 
                       label={`${project.files.length} файлов`}
                       size="small"
                       variant="outlined"
+                      color="primary"
                     />
                   )}
                 </Box>
@@ -482,13 +349,11 @@ const InputArea = ({
         </FormControl>
       )}
 
-      {/* ОБНОВЛЕНО: Сворачиваемое отображение файлов проекта */}
       {projectFiles.length > 0 && (
         <Paper
           variant="outlined"
           sx={{
-            p: 2,
-            mb: 2,
+            p: 2, mb: 2,
             borderRadius: 2,
             bgcolor: 'background.paper',
             border: '2px solid',
@@ -537,17 +402,8 @@ const InputArea = ({
         </Paper>
       )}
 
-      {/* Отображение выбранных файлов */}
       {files.length > 0 && (
-        <Paper
-          variant="outlined"
-          sx={{
-            p: 2,
-            mb: 2,
-            borderRadius: 2,
-            bgcolor: 'background.paper',
-          }}
-        >
+        <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2 }}>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
             📎 Прикрепленные файлы ({files.length}):
           </Typography>
@@ -574,33 +430,15 @@ const InputArea = ({
         </Paper>
       )}
 
-      {/* Индикатор записи */}
       {isRecording && (
-        <Paper
-          variant="outlined"
-          sx={{
-            p: 2,
-            mb: 2,
-            borderRadius: 2,
-            bgcolor: 'error.light',
-            color: 'error.contrastText',
-          }}
-        >
+        <Paper variant="outlined" sx={{ p: 2, mb: 2, bgcolor: 'error.light' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Box
-              sx={{
-                width: 8,
-                height: 8,
-                borderRadius: '50%',
-                bgcolor: 'error.main',
-                animation: 'pulse 1.5s infinite',
-                '@keyframes pulse': {
-                  '0%': { opacity: 1 },
-                  '50%': { opacity: 0.5 },
-                  '100%': { opacity: 1 },
-                },
-              }}
-            />
+            <Box sx={{
+              width: 8, height: 8,
+              borderRadius: '50%',
+              bgcolor: 'error.main',
+              animation: 'pulse 1.5s infinite',
+            }} />
             <Typography variant="body2">
               Запись... {formatRecordingTime(recordingTime)}
             </Typography>
@@ -608,7 +446,6 @@ const InputArea = ({
         </Paper>
       )}
 
-      {/* Поле ввода сообщения */}
       <Box sx={{ display: 'flex', gap: 1 }}>
         <TextField
           fullWidth
@@ -620,23 +457,13 @@ const InputArea = ({
           onKeyDown={handleKeyDown}
           disabled={disabled || loading}
           variant="outlined"
-          sx={{
-            '& .MuiOutlinedInput-root': {
-              borderRadius: 3,
-              pr: 1,
-            },
-          }}
+          sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3, pr: 1 } }}
           InputProps={{
             endAdornment: (
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                 <Tooltip title="Прикрепить файл">
                   <IconButton
-                    onClick={(e) => {
-                      if (e && typeof e.stopPropagation === 'function') {
-                        e.stopPropagation();
-                      }
-                      handleFileSelect();
-                    }}
+                    onClick={handleFileSelect}
                     disabled={disabled || loading}
                     size="small"
                     color="primary"
@@ -669,8 +496,7 @@ const InputArea = ({
             sx={{
               borderRadius: 3,
               minWidth: 'auto',
-              px: 3,
-              py: 1.5,
+              px: 3, py: 1.5,
               height: 56,
             }}
           >
@@ -683,7 +509,6 @@ const InputArea = ({
         </Box>
       </Box>
 
-      {/* Подсказки */}
       <Box sx={{ mt: 1, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
         <Typography variant="caption" color="text.secondary">
           Enter - отправить, Shift+Enter - новая строка
@@ -697,15 +522,8 @@ const InputArea = ({
           </>
         )}
       </Box>
-
-      <input
-        type="file"
-        multiple
-        ref={fileInputRef}
-        style={{ display: 'none' }}
-      />
     </Box>
   );
 };
 
-export default InputArea;
+export default React.memo(InputArea);

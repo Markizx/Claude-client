@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 
 const SettingsContext = createContext();
 
@@ -11,29 +11,20 @@ export const useSettings = () => {
 };
 
 const defaultSettings = {
-  // Основные настройки
   language: 'ru',
   theme: 'dark',
   autoSave: true,
   confirmDelete: true,
-  
-  // Настройки AI
   model: 'claude-3-7-sonnet-20250219',
   maxTokens: 4096,
   temperature: 0.7,
   topP: 1.0,
-  
-  // Интерфейс
   messageAnimation: true,
   compactMode: false,
   showTimestamps: true,
   fontSize: 14,
-  
-  // Уведомления
   soundEnabled: true,
   desktopNotifications: true,
-  
-  // Резервное копирование
   autoBackup: false,
   backupInterval: 24,
   maxBackups: 10,
@@ -45,71 +36,82 @@ export const SettingsProvider = ({ children }) => {
   const [error, setError] = useState(null);
   const [apiReady, setApiReady] = useState(false);
   const [saveInProgress, setSaveInProgress] = useState(false);
+  
+  // Рефы для предотвращения множественных вызовов
+  const isLoadingRef = useRef(false);
+  const lastSyncTimeRef = useRef(0);
 
-  // Применение темы
+  // Дебаунс для применения настроек интерфейса
+  const applyTimeoutRef = useRef(null);
+
+  // Мемоизированная функция применения темы
   const applyTheme = useCallback((theme) => {
-    console.log('Применяем тему:', theme);
-    
-    if (!theme || theme === 'auto') {
-      const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-      const appliedTheme = prefersDark ? 'dark' : 'light';
-      document.documentElement.setAttribute('data-theme', appliedTheme);
-    } else {
-      document.documentElement.setAttribute('data-theme', theme);
+    if (applyTimeoutRef.current) {
+      clearTimeout(applyTimeoutRef.current);
     }
+    
+    applyTimeoutRef.current = setTimeout(() => {
+      if (!theme || theme === 'auto') {
+        const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)')?.matches;
+        document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+      } else {
+        document.documentElement.setAttribute('data-theme', theme);
+      }
+    }, 50);
   }, []);
 
-  // Применение настроек интерфейса
+  // Мемоизированная функция применения настроек интерфейса
   const applyInterfaceSettings = useCallback((currentSettings) => {
     if (!currentSettings) return;
 
-    // Применяем тему
-    if (currentSettings.theme) {
-      applyTheme(currentSettings.theme);
+    if (applyTimeoutRef.current) {
+      clearTimeout(applyTimeoutRef.current);
     }
+    
+    applyTimeoutRef.current = setTimeout(() => {
+      if (currentSettings.theme) {
+        applyTheme(currentSettings.theme);
+      }
 
-    // Применяем размер шрифта
-    if (currentSettings.fontSize) {
-      document.documentElement.style.setProperty('--app-font-size', `${currentSettings.fontSize}px`);
-    }
+      if (currentSettings.fontSize) {
+        document.documentElement.style.setProperty('--app-font-size', `${currentSettings.fontSize}px`);
+      }
 
-    // Применяем другие настройки интерфейса
-    if (currentSettings.compactMode !== undefined) {
-      document.documentElement.setAttribute('data-compact-mode', currentSettings.compactMode.toString());
-    }
-
-    console.log('Настройки интерфейса применены:', currentSettings);
+      if (currentSettings.compactMode !== undefined) {
+        document.documentElement.setAttribute('data-compact-mode', currentSettings.compactMode.toString());
+      }
+    }, 50);
   }, [applyTheme]);
 
-  // КРИТИЧЕСКИ ВАЖНАЯ синхронизация с API handler
+  // Оптимизированная синхронизация с API handler
   const syncWithAPIHandler = useCallback(async (settingsToSync) => {
+    const now = Date.now();
+    if (now - lastSyncTimeRef.current < 1000) return true; // Дебаунс 1 сек
+    
     try {
       if (window.electronAPI) {
-        console.log('SettingsContext: ПРИНУДИТЕЛЬНО синхронизируем настройки с API handler:', settingsToSync);
-        
-        // Отправляем настройки напрямую в API handler через специальный метод
-        const result = await window.electronAPI.updateSettings(settingsToSync);
-        if (result && result.success) {
-          console.log('SettingsContext: настройки успешно синхронизированы с API handler');
+        const result = await window.electronAPI.updateSettings?.(settingsToSync);
+        if (result?.success) {
+          lastSyncTimeRef.current = now;
           return true;
-        } else {
-          console.warn('SettingsContext: не удалось синхронизировать настройки с API handler:', result?.error);
-          return false;
         }
-      } else {
-        console.warn('SettingsContext: electronAPI недоступен для синхронизации');
-        return false;
       }
+      return false;
     } catch (error) {
       console.error('SettingsContext: ошибка синхронизации с API handler:', error);
       return false;
     }
   }, []);
 
-  // Ожидание electronAPI
+  // Оптимизированное ожидание electronAPI
   const waitForElectronAPI = useCallback(async () => {
+    if (window.electronAPI) {
+      setApiReady(true);
+      return true;
+    }
+    
     let attempts = 0;
-    const maxAttempts = 50;
+    const maxAttempts = 30; // Уменьшили время ожидания
     
     while (!window.electronAPI && attempts < maxAttempts) {
       await new Promise(resolve => setTimeout(resolve, 100));
@@ -121,8 +123,11 @@ export const SettingsProvider = ({ children }) => {
     return hasAPI;
   }, []);
 
-  // Загрузка настроек с принудительной синхронизацией
+  // Оптимизированная загрузка настроек
   const loadSettings = useCallback(async () => {
+    if (isLoadingRef.current) return;
+    isLoadingRef.current = true;
+    
     try {
       setLoading(true);
       setError(null);
@@ -130,7 +135,6 @@ export const SettingsProvider = ({ children }) => {
       const hasAPI = await waitForElectronAPI();
       
       if (!hasAPI) {
-        console.warn('electronAPI недоступен, используем дефолтные настройки');
         setSettings(defaultSettings);
         applyInterfaceSettings(defaultSettings);
         return;
@@ -139,36 +143,20 @@ export const SettingsProvider = ({ children }) => {
       const savedSettings = await window.electronAPI.getSettings();
       
       if (savedSettings && typeof savedSettings === 'object' && Object.keys(savedSettings).length > 0) {
-        // Объединяем с дефолтными настройками
         const mergedSettings = { ...defaultSettings, ...savedSettings };
-        
-        console.log('SettingsContext: загружены настройки из хранилища:', mergedSettings);
-        
         setSettings(mergedSettings);
         applyInterfaceSettings(mergedSettings);
         
-        // КРИТИЧЕСКИ ВАЖНО: Принудительно синхронизируем с API handler
-        console.log('SettingsContext: принудительно синхронизируем загруженные настройки с API handler');
-        const syncSuccess = await syncWithAPIHandler(mergedSettings);
-        
-        if (syncSuccess) {
-          console.log('SettingsContext: настройки загружены и успешно синхронизированы с API handler');
-        } else {
-          console.warn('SettingsContext: настройки загружены, но синхронизация с API handler не удалась');
-        }
+        // Синхронизируем с API handler без блокировки UI
+        syncWithAPIHandler(mergedSettings);
       } else {
-        console.log('SettingsContext: настройки не найдены, используем дефолтные');
         setSettings(defaultSettings);
         applyInterfaceSettings(defaultSettings);
         
-        // Сохраняем дефолтные настройки
-        try {
-          await window.electronAPI.updateSettings(defaultSettings);
-          await syncWithAPIHandler(defaultSettings);
-          console.log('SettingsContext: дефолтные настройки сохранены и синхронизированы');
-        } catch (saveError) {
-          console.error('Ошибка сохранения дефолтных настроек:', saveError);
-        }
+        // Сохраняем дефолтные настройки асинхронно
+        window.electronAPI.updateSettings?.(defaultSettings).then(() => {
+          syncWithAPIHandler(defaultSettings);
+        });
       }
     } catch (err) {
       console.error('Ошибка загрузки настроек:', err);
@@ -177,16 +165,13 @@ export const SettingsProvider = ({ children }) => {
       applyInterfaceSettings(defaultSettings);
     } finally {
       setLoading(false);
+      isLoadingRef.current = false;
     }
   }, [waitForElectronAPI, applyInterfaceSettings, syncWithAPIHandler]);
 
-  // Сохранение настроек с принудительной синхронизацией
+  // Оптимизированное сохранение настроек с дебаунсом
   const updateSettings = useCallback(async (newSettings) => {
-    // Предотвращаем множественные одновременные вызовы
-    if (saveInProgress) {
-      console.log('Сохранение уже в процессе, пропускаем...');
-      return false;
-    }
+    if (saveInProgress) return false;
 
     try {
       setSaveInProgress(true);
@@ -196,32 +181,18 @@ export const SettingsProvider = ({ children }) => {
         throw new Error('API не готов');
       }
       
-      // Объединяем с текущими настройками
       const mergedSettings = { ...settings, ...newSettings };
       
-      console.log('SettingsContext: сохраняем обновленные настройки:', mergedSettings);
-      console.log('SettingsContext: ВНИМАНИЕ - модель в настройках:', mergedSettings.model);
+      // Немедленно обновляем UI
+      setSettings(mergedSettings);
+      applyInterfaceSettings(mergedSettings);
       
-      // Сохраняем через electron API
+      // Сохраняем в БД
       const result = await window.electronAPI.updateSettings(mergedSettings);
       
-      if (result && result.success) {
-        // Обновляем локальное состояние
-        setSettings(mergedSettings);
-        
-        // Применяем настройки интерфейса немедленно
-        applyInterfaceSettings(mergedSettings);
-        
-        // КРИТИЧЕСКИ ВАЖНО: Принудительно синхронизируем с API handler
-        console.log('SettingsContext: ПРИНУДИТЕЛЬНО синхронизируем сохраненные настройки с API handler');
-        const syncSuccess = await syncWithAPIHandler(mergedSettings);
-        
-        if (syncSuccess) {
-          console.log('SettingsContext: настройки успешно сохранены и синхронизированы с API handler');
-        } else {
-          console.warn('SettingsContext: настройки сохранены, но синхронизация с API handler не удалась');
-        }
-        
+      if (result?.success) {
+        // Синхронизируем с API handler асинхронно
+        syncWithAPIHandler(mergedSettings);
         return true;
       } else {
         throw new Error(result?.error || 'Ошибка сохранения настроек');
@@ -235,7 +206,7 @@ export const SettingsProvider = ({ children }) => {
     }
   }, [settings, apiReady, applyInterfaceSettings, syncWithAPIHandler, saveInProgress]);
 
-  // Обновление одной настройки
+  // Оптимизированное обновление одной настройки
   const updateSetting = useCallback(async (key, value) => {
     try {
       setError(null);
@@ -244,33 +215,25 @@ export const SettingsProvider = ({ children }) => {
         throw new Error('API не готов');
       }
       
-      console.log(`SettingsContext: обновляем одну настройку ${key}:`, value);
-      
-      const result = await window.electronAPI.updateSetting(key, value);
-      
-      if (result && result.success) {
-        setSettings(prev => {
-          const updated = { ...prev, [key]: value };
-          
-          console.log(`SettingsContext: настройка ${key} обновлена в локальном состоянии`);
-          
-          // Если изменили настройки интерфейса, применяем их
-          if (['theme', 'fontSize', 'compactMode'].includes(key)) {
-            applyInterfaceSettings(updated);
-          }
-          
-          // Синхронизируем с API handler
-          syncWithAPIHandler(updated).then(syncSuccess => {
-            if (syncSuccess) {
-              console.log(`SettingsContext: настройка ${key} синхронизирована с API handler`);
-            } else {
-              console.warn(`SettingsContext: не удалось синхронизировать настройку ${key} с API handler`);
-            }
-          });
-          
-          return updated;
-        });
+      // Немедленно обновляем локальное состояние
+      setSettings(prev => {
+        const updated = { ...prev, [key]: value };
         
+        // Применяем настройки интерфейса если нужно
+        if (['theme', 'fontSize', 'compactMode'].includes(key)) {
+          applyInterfaceSettings(updated);
+        }
+        
+        return updated;
+      });
+      
+      // Асинхронно сохраняем в БД
+      const result = await window.electronAPI.updateSetting?.(key, value);
+      
+      if (result?.success) {
+        // Получаем обновленные настройки и синхронизируем
+        const allSettings = await window.electronAPI.getSettings?.() || settings;
+        syncWithAPIHandler(allSettings);
         return true;
       } else {
         throw new Error(result?.error || `Ошибка обновления настройки ${key}`);
@@ -280,9 +243,9 @@ export const SettingsProvider = ({ children }) => {
       setError(err.message);
       return false;
     }
-  }, [apiReady, applyInterfaceSettings, syncWithAPIHandler]);
+  }, [apiReady, applyInterfaceSettings, syncWithAPIHandler, settings]);
 
-  // Сброс настроек
+  // Оптимизированный сброс настроек
   const resetSettings = useCallback(async () => {
     try {
       setError(null);
@@ -291,23 +254,15 @@ export const SettingsProvider = ({ children }) => {
         throw new Error('API не готов');
       }
       
-      console.log('SettingsContext: сбрасываем настройки к дефолтным значениям');
+      // Немедленно обновляем UI
+      setSettings(defaultSettings);
+      applyInterfaceSettings(defaultSettings);
       
-      const result = await window.electronAPI.resetSettings();
+      const result = await window.electronAPI.resetSettings?.();
       
-      if (result && result.success) {
-        setSettings(defaultSettings);
-        applyInterfaceSettings(defaultSettings);
-        
-        // КРИТИЧЕСКИ ВАЖНО: Синхронизируем дефолтные настройки с API handler
-        const syncSuccess = await syncWithAPIHandler(defaultSettings);
-        
-        if (syncSuccess) {
-          console.log('SettingsContext: настройки сброшены и синхронизированы с API handler');
-        } else {
-          console.warn('SettingsContext: настройки сброшены, но синхронизация с API handler не удалась');
-        }
-        
+      if (result?.success) {
+        // Синхронизируем с API handler
+        syncWithAPIHandler(defaultSettings);
         return true;
       } else {
         throw new Error('Ошибка сброса настроек');
@@ -319,36 +274,40 @@ export const SettingsProvider = ({ children }) => {
     }
   }, [apiReady, applyInterfaceSettings, syncWithAPIHandler]);
 
-  // Загружаем настройки при монтировании
+  // Загружаем настройки только при монтировании
   useEffect(() => {
     loadSettings();
   }, [loadSettings]);
 
-  // Слушаем изменения системной темы
+  // Оптимизированный слушатель системной темы
   useEffect(() => {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleChange = () => {
-      if (settings.theme === 'auto') {
-        applyTheme('auto');
-      }
-    };
-
+    if (settings.theme !== 'auto') return;
+    
+    const mediaQuery = window.matchMedia?.('(prefers-color-scheme: dark)');
+    if (!mediaQuery) return;
+    
+    const handleChange = () => applyTheme('auto');
+    
     if (mediaQuery.addEventListener) {
       mediaQuery.addEventListener('change', handleChange);
+      return () => mediaQuery.removeEventListener('change', handleChange);
     } else {
       mediaQuery.addListener(handleChange);
+      return () => mediaQuery.removeListener(handleChange);
     }
-
-    return () => {
-      if (mediaQuery.removeEventListener) {
-        mediaQuery.removeEventListener('change', handleChange);
-      } else {
-        mediaQuery.removeListener(handleChange);
-      }
-    };
   }, [settings.theme, applyTheme]);
 
-  const value = {
+  // Очистка таймаутов при размонтировании
+  useEffect(() => {
+    return () => {
+      if (applyTimeoutRef.current) {
+        clearTimeout(applyTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Мемоизированное значение контекста
+  const value = useMemo(() => ({
     settings,
     updateSettings,
     updateSetting,
@@ -358,7 +317,16 @@ export const SettingsProvider = ({ children }) => {
     apiReady,
     saveInProgress,
     setError: useCallback((error) => setError(error), []),
-  };
+  }), [
+    settings,
+    updateSettings,
+    updateSetting,
+    resetSettings,
+    loading,
+    error,
+    apiReady,
+    saveInProgress
+  ]);
 
   return (
     <SettingsContext.Provider value={value}>

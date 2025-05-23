@@ -1,5 +1,4 @@
-// components/Chat/MessageItem.jsx
-import React, { useState } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   Box,
   Typography,
@@ -38,7 +37,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import ArtifactRenderer from '../Artifacts/ArtifactRenderer';
 
-const MessageItem = ({ 
+const MessageItem = React.memo(({ 
   message, 
   onAction, 
   isLast = false,
@@ -51,24 +50,21 @@ const MessageItem = ({
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
-  const [editContent, setEditContent] = useState(message?.content || '');
+  const [editContent, setEditContent] = useState('');
   const [copySuccess, setCopySuccess] = useState(false);
 
-  const isUser = message?.role === 'user';
-  const hasFiles = message?.attachments && message.attachments.length > 0;
+  // Мемоизированные значения
+  const isUser = useMemo(() => message?.role === 'user', [message?.role]);
+  const hasFiles = useMemo(() => message?.attachments?.length > 0, [message?.attachments?.length]);
   
-  // Проверяем наличие артефактов в сообщении
-  const hasArtifacts = message?.artifacts && message.artifacts.length > 0;
-
-  // Защита от некорректных данных
-  if (!message) {
-    return null;
-  }
-
-  // Форматирование времени
-  const formatTime = (timestamp) => {
+  // Мемоизированное форматирование времени
+  const formattedTime = useMemo(() => {
     try {
-      const date = new Date(timestamp);
+      if (!message?.timestamp) return '';
+      
+      const date = new Date(message.timestamp);
+      if (isNaN(date.getTime())) return '';
+      
       return date.toLocaleTimeString([], { 
         hour: '2-digit', 
         minute: '2-digit',
@@ -78,103 +74,142 @@ const MessageItem = ({
     } catch (error) {
       return '';
     }
-  };
+  }, [message?.timestamp]);
 
-  // Обработчик копирования
-  const handleCopy = async () => {
+  // Мемоизированная обработка артефактов
+  const processedContent = useMemo(() => {
+    if (!message?.content || typeof message.content !== 'string') {
+      return { cleanContent: message?.content || '', artifacts: [] };
+    }
+    
+    const artifacts = [];
+    const artifactRegex = /<artifact\s+([^>]*)>([\s\S]*?)<\/artifact>/g;
+    
+    let match;
+    while ((match = artifactRegex.exec(message.content)) !== null) {
+      const attributesString = match[1];
+      const artifactContent = match[2];
+      
+      const identifierMatch = attributesString.match(/identifier\s*=\s*["']([^"']+)["']/);
+      const typeMatch = attributesString.match(/type\s*=\s*["']([^"']+)["']/);
+      const titleMatch = attributesString.match(/title\s*=\s*["']([^"']+)["']/);
+      const languageMatch = attributesString.match(/language\s*=\s*["']([^"']+)["']/);
+      
+      if (identifierMatch) {
+        artifacts.push({
+          id: identifierMatch[1],
+          type: typeMatch ? typeMatch[1] : 'text/plain',
+          title: titleMatch ? titleMatch[1] : 'Артефакт',
+          language: languageMatch ? languageMatch[1] : null,
+          content: artifactContent.trim()
+        });
+      }
+    }
+    
+    const cleanContent = message.content.replace(artifactRegex, '').trim();
+    return { cleanContent, artifacts };
+  }, [message?.content]);
+
+  const allArtifacts = useMemo(() => [
+    ...(message?.artifacts || []),
+    ...processedContent.artifacts
+  ], [message?.artifacts, processedContent.artifacts]);
+
+  // Оптимизированные обработчики событий
+  const handleCopy = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(message.content || '');
+      await navigator.clipboard.writeText(message?.content || '');
       setCopySuccess(true);
       setTimeout(() => setCopySuccess(false), 2000);
     } catch (error) {
       console.error('Ошибка копирования:', error);
     }
-    handleMenuClose();
-  };
-
-  // Обработчик меню
-  const handleMenuClick = (event) => {
-    setAnchorEl(event.currentTarget);
-  };
-
-  const handleMenuClose = () => {
     setAnchorEl(null);
-  };
+  }, [message?.content]);
 
-  // Обработчик редактирования
-  const handleEdit = () => {
-    setEditContent(message.content || '');
+  const handleMenuClick = useCallback((event) => {
+    setAnchorEl(event.currentTarget);
+  }, []);
+
+  const handleMenuClose = useCallback(() => {
+    setAnchorEl(null);
+  }, []);
+
+  const handleEdit = useCallback(() => {
+    setEditContent(message?.content || '');
     setEditDialogOpen(true);
-    handleMenuClose();
-  };
+    setAnchorEl(null);
+  }, [message?.content]);
 
-  const handleEditSave = () => {
-    if (onAction && editContent.trim() !== (message.content || '')) {
-      onAction('edit', { id: message.id, content: editContent.trim() });
+  const handleEditSave = useCallback(() => {
+    if (onAction && editContent.trim() !== (message?.content || '')) {
+      onAction('edit', { id: message?.id, content: editContent.trim() });
     }
     setEditDialogOpen(false);
-  };
+  }, [onAction, editContent, message?.id, message?.content]);
 
-  // Обработчик удаления
-  const handleDelete = () => {
+  const handleDelete = useCallback(() => {
     setDeleteDialogOpen(true);
-    handleMenuClose();
-  };
+    setAnchorEl(null);
+  }, []);
 
-  const handleDeleteConfirm = () => {
+  const handleDeleteConfirm = useCallback(() => {
     if (onAction) {
-      onAction('delete', message.id);
+      onAction('delete', message?.id);
     }
     setDeleteDialogOpen(false);
-  };
+  }, [onAction, message?.id]);
 
-  // Обработчик регенерации
-  const handleRegenerate = () => {
+  const handleRegenerate = useCallback(() => {
     if (onAction) {
       onAction('regenerate');
     }
-    handleMenuClose();
-  };
+    setAnchorEl(null);
+  }, [onAction]);
 
-  // Обработчик поделиться
-  const handleShare = () => {
+  const handleShare = useCallback(() => {
     setShareDialogOpen(true);
-    handleMenuClose();
-  };
+    setAnchorEl(null);
+  }, []);
 
-  // Компонент для отображения файлов
-  const FileChips = ({ files }) => (
-    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
-      {files.map((file, index) => (
-        <Chip
-          key={index}
-          icon={<InsertDriveFileIcon />}
-          label={
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <span>{file.name}</span>
-              <Typography variant="caption" color="inherit" sx={{ opacity: 0.7 }}>
-                ({Math.round((file.size || 0) / 1024)}KB)
-              </Typography>
-            </Box>
-          }
-          size="small"
-          variant="outlined"
-          sx={{ 
-            maxWidth: 250,
-            '& .MuiChip-label': {
-              maxWidth: '100%',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis'
+  const toggleFiles = useCallback(() => {
+    setShowFiles(prev => !prev);
+  }, []);
+
+  const toggleArtifacts = useCallback(() => {
+    setShowArtifacts(prev => !prev);
+  }, []);
+
+  // Мемоизированный компонент для отображения файлов
+  const FileChips = useMemo(() => {
+    if (!hasFiles) return null;
+    
+    return (
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
+        {message.attachments.map((file, index) => (
+          <Chip
+            key={index}
+            icon={<InsertDriveFileIcon />}
+            label={
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <span>{file.name}</span>
+                <Typography variant="caption" color="inherit" sx={{ opacity: 0.7 }}>
+                  ({Math.round((file.size || 0) / 1024)}KB)
+                </Typography>
+              </Box>
             }
-          }}
-        />
-      ))}
-    </Box>
-  );
+            size="small"
+            variant="outlined"
+            sx={{ maxWidth: 250 }}
+          />
+        ))}
+      </Box>
+    );
+  }, [hasFiles, message?.attachments]);
 
-  // Компонент для Markdown контента
-  const MarkdownContent = ({ content }) => {
-    if (!content) return null;
+  // Мемоизированный компонент Markdown
+  const MarkdownContent = useMemo(() => {
+    if (!processedContent.cleanContent) return null;
     
     return (
       <ReactMarkdown
@@ -182,11 +217,7 @@ const MessageItem = ({
         rehypePlugins={[rehypeRaw]}
         components={{
           p: ({ children }) => (
-            <Typography 
-              variant="body1" 
-              paragraph 
-              sx={{ mb: 1, '&:last-child': { mb: 0 } }}
-            >
+            <Typography variant="body1" paragraph sx={{ mb: 1, '&:last-child': { mb: 0 } }}>
               {children}
             </Typography>
           ),
@@ -241,17 +272,13 @@ const MessageItem = ({
             );
           },
           blockquote: ({ children }) => (
-            <Box 
-              sx={{ 
-                borderLeft: '4px solid',
-                borderColor: 'primary.main',
-                pl: 2,
-                py: 1,
-                my: 1,
-                bgcolor: 'action.hover',
-                fontStyle: 'italic'
-              }}
-            >
+            <Box sx={{ 
+              borderLeft: '4px solid',
+              borderColor: 'primary.main',
+              pl: 2, py: 1, my: 1,
+              bgcolor: 'action.hover',
+              fontStyle: 'italic'
+            }}>
               {children}
             </Box>
           ),
@@ -272,193 +299,113 @@ const MessageItem = ({
           )
         }}
       >
-        {content}
+        {processedContent.cleanContent}
       </ReactMarkdown>
     );
-  };
+  }, [processedContent.cleanContent]);
 
-  // Функция для обработки и извлечения артефактов из содержимого сообщения
-  const extractArtifactsFromContent = (content) => {
-    if (!content || typeof content !== 'string') return { cleanContent: content, artifacts: [] };
-    
-    const artifacts = [];
-    const artifactRegex = /<artifact\s+([^>]*)>([\s\S]*?)<\/artifact>/g;
-    
-    // Находим все артефакты в сообщении
-    let match;
-    while ((match = artifactRegex.exec(content)) !== null) {
-      const attributesString = match[1];
-      const artifactContent = match[2];
-      
-      // Извлекаем атрибуты
-      const identifierMatch = attributesString.match(/identifier\s*=\s*["']([^"']+)["']/);
-      const typeMatch = attributesString.match(/type\s*=\s*["']([^"']+)["']/);
-      const titleMatch = attributesString.match(/title\s*=\s*["']([^"']+)["']/);
-      const languageMatch = attributesString.match(/language\s*=\s*["']([^"']+)["']/);
-      
-      if (identifierMatch) {
-        artifacts.push({
-          id: identifierMatch[1],
-          type: typeMatch ? typeMatch[1] : 'text/plain',
-          title: titleMatch ? titleMatch[1] : 'Артефакт',
-          language: languageMatch ? languageMatch[1] : null,
-          content: artifactContent.trim()
-        });
-      }
-    }
-    
-    // Удаляем артефакты из контента
-    const cleanContent = content.replace(artifactRegex, '').trim();
-    
-    return { cleanContent, artifacts };
-  };
-
-  // Обрабатываем содержимое сообщения для выделения артефактов
-  const processedContent = extractArtifactsFromContent(message.content);
-  const extractedArtifacts = processedContent.artifacts;
-  
-  // Объединяем извлеченные артефакты с уже существующими
-  const allArtifacts = [
-    ...(message.artifacts || []),
-    ...extractedArtifacts
-  ];
+  if (!message) return null;
 
   return (
-    <Box 
-      sx={{ 
-        display: 'flex', 
-        flexDirection: 'row', 
-        mb: compact ? 2 : 3,
-        alignItems: 'flex-start',
-        gap: 1.5,
-        position: 'relative',
-        '&:hover .message-actions': {
-          opacity: 1
-        }
-      }}
-    >
-      {/* Аватар */}
-      <Avatar 
-        sx={{ 
-          bgcolor: isUser ? 'primary.main' : 'secondary.main',
-          width: compact ? 32 : 40,
-          height: compact ? 32 : 40,
-          mt: 0.5
-        }}
-      >
+    <Box sx={{ 
+      display: 'flex', 
+      flexDirection: 'row', 
+      mb: compact ? 2 : 3,
+      alignItems: 'flex-start',
+      gap: 1.5,
+      position: 'relative',
+      '&:hover .message-actions': { opacity: 1 }
+    }}>
+      <Avatar sx={{ 
+        bgcolor: isUser ? 'primary.main' : 'secondary.main',
+        width: compact ? 32 : 40,
+        height: compact ? 32 : 40,
+        mt: 0.5
+      }}>
         {isUser ? <AccountCircleIcon /> : <SmartToyIcon />}
       </Avatar>
 
-      {/* Контент сообщения */}
       <Box sx={{ flexGrow: 1, maxWidth: 'calc(100% - 60px)' }}>
-        <Paper 
-          elevation={1} 
-          sx={{ 
-            p: compact ? 1.5 : 2, 
-            bgcolor: isUser ? 'primary.main' : 'background.paper',
-            color: isUser ? 'primary.contrastText' : 'text.primary',
-            borderRadius: 2,
-            border: !isUser ? '1px solid' : 'none',
-            borderColor: 'divider',
-            position: 'relative'
-          }}
-        >
-          {/* Основной текст */}
+        <Paper elevation={1} sx={{ 
+          p: compact ? 1.5 : 2, 
+          bgcolor: isUser ? 'primary.main' : 'background.paper',
+          color: isUser ? 'primary.contrastText' : 'text.primary',
+          borderRadius: 2,
+          border: !isUser ? '1px solid' : 'none',
+          borderColor: 'divider',
+          position: 'relative'
+        }}>
           <Box sx={{ mb: (hasFiles || allArtifacts.length > 0) ? 1.5 : 0 }}>
             {isUser ? (
-              <Typography 
-                variant="body1" 
-                sx={{ 
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word'
-                }}
-              >
+              <Typography variant="body1" sx={{ 
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word'
+              }}>
                 {message.content || ''}
               </Typography>
             ) : (
-              <MarkdownContent content={processedContent.cleanContent || message.content || ''} />
+              MarkdownContent
             )}
           </Box>
 
-          {/* Прикрепленные файлы */}
           {hasFiles && (
             <>
               <Divider sx={{ my: 1.5, opacity: isUser ? 0.3 : 1 }} />
               <Box>
-                <Box 
-                  sx={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    cursor: 'pointer',
-                    mb: showFiles ? 1 : 0
-                  }}
-                  onClick={() => setShowFiles(!showFiles)}
-                >
-                  <Typography 
-                    variant="body2" 
-                    sx={{ 
-                      mr: 1,
-                      color: isUser ? 'primary.contrastText' : 'text.secondary'
-                    }}
-                  >
+                <Box sx={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  cursor: 'pointer',
+                  mb: showFiles ? 1 : 0
+                }}
+                onClick={toggleFiles}>
+                  <Typography variant="body2" sx={{ 
+                    mr: 1,
+                    color: isUser ? 'primary.contrastText' : 'text.secondary'
+                  }}>
                     Файлы ({message.attachments.length})
                   </Typography>
-                  <IconButton 
-                    size="small"
-                    sx={{ 
-                      color: isUser ? 'primary.contrastText' : 'text.secondary'
-                    }}
-                  >
+                  <IconButton size="small" sx={{ 
+                    color: isUser ? 'primary.contrastText' : 'text.secondary'
+                  }}>
                     {showFiles ? <ExpandLessIcon /> : <ExpandMoreIcon />}
                   </IconButton>
                 </Box>
                 <Collapse in={showFiles}>
-                  <FileChips files={message.attachments} />
+                  {FileChips}
                 </Collapse>
               </Box>
             </>
           )}
 
-          {/* Действия с сообщением */}
-          <Box 
-            className="message-actions"
-            sx={{ 
-              position: 'absolute',
-              top: 8,
-              right: 8,
-              opacity: 0,
-              transition: 'opacity 0.2s',
-              bgcolor: isUser ? 'rgba(255,255,255,0.1)' : 'background.paper',
-              borderRadius: 1,
-              backdropFilter: 'blur(4px)'
-            }}
-          >
+          <Box className="message-actions" sx={{ 
+            position: 'absolute',
+            top: 8, right: 8,
+            opacity: 0,
+            transition: 'opacity 0.2s',
+            bgcolor: isUser ? 'rgba(255,255,255,0.1)' : 'background.paper',
+            borderRadius: 1,
+            backdropFilter: 'blur(4px)'
+          }}>
             <Tooltip title="Действия">
-              <IconButton 
-                size="small" 
-                onClick={handleMenuClick}
-                sx={{ 
-                  color: isUser ? 'primary.contrastText' : 'text.secondary'
-                }}
-              >
+              <IconButton size="small" onClick={handleMenuClick} sx={{ 
+                color: isUser ? 'primary.contrastText' : 'text.secondary'
+              }}>
                 <MoreVertIcon fontSize="small" />
               </IconButton>
             </Tooltip>
           </Box>
         </Paper>
 
-        {/* Артефакты */}
         {allArtifacts.length > 0 && (
           <Box sx={{ mt: 2 }}>
-            <Box 
-              sx={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                cursor: 'pointer',
-                mb: showArtifacts ? 1 : 0
-              }}
-              onClick={() => setShowArtifacts(!showArtifacts)}
-            >
+            <Box sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              cursor: 'pointer',
+              mb: showArtifacts ? 1 : 0
+            }}
+            onClick={toggleArtifacts}>
               <Typography variant="subtitle2" sx={{ mr: 1 }}>
                 Артефакты ({allArtifacts.length})
               </Typography>
@@ -479,36 +426,25 @@ const MessageItem = ({
           </Box>
         )}
 
-        {/* Время сообщения и статус */}
         {showTimestamp && (
-          <Box 
-            sx={{ 
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              mt: 1
-            }}
-          >
-            <Typography 
-              variant="caption" 
-              color="text.secondary"
-            >
-              {formatTime(message.timestamp)}
+          <Box sx={{ 
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            mt: 1
+          }}>
+            <Typography variant="caption" color="text.secondary">
+              {formattedTime}
             </Typography>
             
             {copySuccess && (
-              <Typography 
-                variant="caption" 
-                color="success.main"
-                sx={{ ml: 1 }}
-              >
+              <Typography variant="caption" color="success.main" sx={{ ml: 1 }}>
                 Скопировано!
               </Typography>
             )}
           </Box>
         )}
 
-        {/* Меню действий */}
         <Menu
           anchorEl={anchorEl}
           open={Boolean(anchorEl)}
@@ -548,13 +484,7 @@ const MessageItem = ({
           </MenuItem>
         </Menu>
 
-        {/* Диалог редактирования */}
-        <Dialog 
-          open={editDialogOpen} 
-          onClose={() => setEditDialogOpen(false)}
-          maxWidth="md"
-          fullWidth
-        >
+        <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} maxWidth="md" fullWidth>
           <DialogTitle>Редактировать сообщение</DialogTitle>
           <DialogContent>
             <TextField
@@ -575,18 +505,14 @@ const MessageItem = ({
             <Button 
               onClick={handleEditSave}
               variant="contained"
-              disabled={!editContent.trim() || editContent.trim() === (message.content || '')}
+              disabled={!editContent.trim() || editContent.trim() === (message?.content || '')}
             >
               Сохранить
             </Button>
           </DialogActions>
         </Dialog>
 
-        {/* Диалог подтверждения удаления */}
-        <Dialog 
-          open={deleteDialogOpen} 
-          onClose={() => setDeleteDialogOpen(false)}
-        >
+        <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
           <DialogTitle>Удалить сообщение?</DialogTitle>
           <DialogContent>
             <Typography>
@@ -595,23 +521,13 @@ const MessageItem = ({
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setDeleteDialogOpen(false)}>Отмена</Button>
-            <Button 
-              onClick={handleDeleteConfirm}
-              color="error" 
-              variant="contained"
-            >
+            <Button onClick={handleDeleteConfirm} color="error" variant="contained">
               Удалить
             </Button>
           </DialogActions>
         </Dialog>
 
-        {/* Диалог "Поделиться" */}
-        <Dialog 
-          open={shareDialogOpen} 
-          onClose={() => setShareDialogOpen(false)}
-          maxWidth="sm"
-          fullWidth
-        >
+        <Dialog open={shareDialogOpen} onClose={() => setShareDialogOpen(false)} maxWidth="sm" fullWidth>
           <DialogTitle>Поделиться сообщением</DialogTitle>
           <DialogContent>
             <Alert severity="info" sx={{ mb: 2 }}>
@@ -622,10 +538,8 @@ const MessageItem = ({
               multiline
               rows={8}
               variant="outlined"
-              value={message.content || ''}
-              InputProps={{
-                readOnly: true
-              }}
+              value={message?.content || ''}
+              InputProps={{ readOnly: true }}
               sx={{ mt: 1 }}
             />
           </DialogContent>
@@ -646,6 +560,8 @@ const MessageItem = ({
       </Box>
     </Box>
   );
-};
+});
+
+MessageItem.displayName = 'MessageItem';
 
 export default MessageItem;
