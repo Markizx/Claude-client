@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -38,7 +38,7 @@ const ChatView = () => {
     deleteChat,
     regenerateLastResponse,
     exportChat,
-    createChat, // ДОБАВЛЕНО: для создания чата
+    createChat,
     loading, 
     error, 
     setError 
@@ -56,33 +56,46 @@ const ChatView = () => {
   const [messageToDelete, setMessageToDelete] = useState(null);
   
   const messagesEndRef = useRef(null);
+  const prevChatIdRef = useRef(null);
 
-  // Загрузка чата при монтировании компонента или изменении chatId
+  // ИСПРАВЛЕНО: правильная обработка смены чатов
   useEffect(() => {
-    async function fetchChat() {
+    const handleChatChange = async () => {
+      console.log('ChatView: изменился chatId:', chatId, 'предыдущий:', prevChatIdRef.current);
+      
+      // Проверяем, действительно ли изменился чат
+      if (chatId === prevChatIdRef.current) {
+        console.log('ChatView: chatId не изменился, пропускаем загрузку');
+        return;
+      }
+      
+      prevChatIdRef.current = chatId;
+      
       if (chatId && chatId !== 'new') {
+        console.log('ChatView: загружаем чат:', chatId);
         const chat = await loadChat(chatId);
+        
         // Если чат не найден, перенаправляем на новый чат
         if (!chat) {
-          console.log('Чат не найден, перенаправляем на новый чат');
+          console.log('ChatView: чат не найден, перенаправляем на новый чат');
           navigate('/chat/new', { replace: true });
         }
       } else if (chatId === 'new') {
-        // Для нового чата просто загружаем пустое состояние
+        console.log('ChatView: загружаем новый чат');
         await loadChat('new');
       }
-    }
-    fetchChat();
+    };
+    
+    handleChatChange();
   }, [chatId, loadChat, navigate]);
 
   // Прокрутка к последнему сообщению при добавлении нового
   useEffect(() => {
-    if (messagesEndRef.current) {
+    if (messagesEndRef.current && messages.length > 0) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages]);
 
-  // ДОБАВЛЕНО: обработчик создания нового чата
   const handleCreateNewChat = async () => {
     try {
       const newChat = await createChat('Новый чат');
@@ -95,7 +108,7 @@ const ChatView = () => {
   };
 
   // Обработка отправки сообщения
-  const handleSendMessage = async (content, files, projectFiles) => {
+  const handleSendMessage = useCallback(async (content, files, projectFiles) => {
     if (!content.trim() && (!files || files.length === 0)) {
       return;
     }
@@ -103,17 +116,18 @@ const ChatView = () => {
     try {
       const result = await sendMessage(content, files, projectFiles);
       
-      // ДОБАВЛЕНО: если чат был создан при отправке сообщения, обновляем URL
-      if (result && chatId === 'new' && window.location.hash.includes('/chat/new')) {
-        // URL уже должен быть обновлен в sendMessage, но на всякий случай проверяем
+      // ИСПРАВЛЕНО: если чат был создан при отправке сообщения, обновляем URL
+      if (result && chatId === 'new') {
+        // Получаем текущий активный чат и переходим к нему
         if (currentChat && currentChat.id) {
+          console.log('ChatView: новый чат создан, переходим к нему:', currentChat.id);
           navigate(`/chat/${currentChat.id}`, { replace: true });
         }
       }
     } catch (error) {
       setError('Ошибка при отправке сообщения: ' + (error.message || String(error)));
     }
-  };
+  }, [sendMessage, chatId, currentChat, navigate, setError]);
 
   // Обработка действий с сообщениями
   const handleMessageAction = async (action, data) => {
@@ -215,7 +229,7 @@ const ChatView = () => {
   // Обработка поиска
   const handleSearchResult = (result) => {
     if (result.chat_id !== currentChat?.id) {
-      loadChat(result.chat_id);
+      navigate(`/chat/${result.chat_id}`);
     }
   };
 
@@ -350,6 +364,16 @@ const ChatView = () => {
     );
   }
 
+  // ИСПРАВЛЕНО: показываем загрузку только когда действительно загружаем
+  if (loading && !currentChat && !messages.length) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+        <CircularProgress />
+        <Typography sx={{ ml: 2 }}>Загрузка чата...</Typography>
+      </Box>
+    );
+  }
+
   return (
     <Box sx={{ 
       display: 'flex', 
@@ -398,18 +422,12 @@ const ChatView = () => {
 
       {/* Сообщения чата */}
       <Box sx={{ flexGrow: 1, overflow: 'auto', px: 2, py: 1 }}>
-        {loading && messages.length === 0 ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-            <CircularProgress />
-          </Box>
-        ) : (
-          <MessageList 
-            messages={messages} 
-            onMessageAction={handleMessageAction}
-            showTimestamps={settings?.showTimestamps !== false}
-            compact={settings?.compactMode === true}
-          />
-        )}
+        <MessageList 
+          messages={messages} 
+          onMessageAction={handleMessageAction}
+          showTimestamps={settings?.showTimestamps !== false}
+          compact={settings?.compactMode === true}
+        />
         <div ref={messagesEndRef} />
       </Box>
 

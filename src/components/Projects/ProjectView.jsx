@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -39,7 +39,8 @@ const ProjectView = () => {
     setActiveProject,
     addFile,
     deleteFile,
-    clearError
+    clearError,
+    getProjectWithFiles
   } = useProject();
   
   const { createChat } = useChat();
@@ -48,22 +49,57 @@ const ProjectView = () => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  
+  const prevProjectIdRef = React.useRef(null);
 
-  // Загрузка проекта при монтировании или изменении projectId
+  // ИСПРАВЛЕНО: правильная обработка смены проектов
   useEffect(() => {
-    if (projectId && projects && projects.length > 0) {
-      const project = projects.find(p => p.id === projectId);
-      if (project) {
-        setActiveProject(project);
+    const handleProjectChange = async () => {
+      console.log('ProjectView: изменился projectId:', projectId, 'предыдущий:', prevProjectIdRef.current);
+      
+      // Проверяем, действительно ли изменился проект
+      if (projectId === prevProjectIdRef.current) {
+        console.log('ProjectView: projectId не изменился, пропускаем загрузку');
+        return;
       }
-    }
-  }, [projectId, projects, setActiveProject]);
+      
+      prevProjectIdRef.current = projectId;
+      
+      if (projectId && projects && projects.length > 0) {
+        console.log('ProjectView: ищем проект:', projectId);
+        let project = projects.find(p => p.id === projectId);
+        
+        // ИСПРАВЛЕНО: если проект не найден в списке, пытаемся получить его с файлами
+        if (!project) {
+          console.log('ProjectView: проект не найден в списке, загружаем с файлами');
+          project = await getProjectWithFiles(projectId);
+        }
+        
+        if (project) {
+          console.log('ProjectView: устанавливаем активный проект:', project.name || project.title);
+          setActiveProject(project);
+        } else {
+          console.error('ProjectView: проект не найден:', projectId);
+          navigate('/'); // Переходим на главную если проект не найден
+        }
+      } else {
+        console.log('ProjectView: очищаем активный проект');
+        setActiveProject(null);
+      }
+    };
+    
+    handleProjectChange();
+  }, [projectId, projects, setActiveProject, getProjectWithFiles, navigate]);
 
   // Обновление полей редактирования при изменении проекта
   useEffect(() => {
     if (activeProject) {
+      console.log('ProjectView: обновляем поля редактирования для проекта:', activeProject.name || activeProject.title);
       setTitle(activeProject.title || activeProject.name || '');
       setDescription(activeProject.description || '');
+    } else {
+      setTitle('');
+      setDescription('');
     }
   }, [activeProject]);
 
@@ -83,17 +119,24 @@ const ProjectView = () => {
   const handleUpdateProject = async () => {
     if (!activeProject) return;
     
-    await updateProject(activeProject.id, {
+    console.log('ProjectView: обновляем проект:', title);
+    
+    const result = await updateProject(activeProject.id, {
       title,
+      name: title, // Для совместимости
       description,
     });
     
-    setEditDialogOpen(false);
+    if (result) {
+      setEditDialogOpen(false);
+    }
   };
 
   // Обработчик удаления проекта
   const handleDeleteProject = async () => {
     if (!activeProject) return;
+    
+    console.log('ProjectView: удаляем проект:', activeProject.name || activeProject.title);
     
     const success = await deleteProject(activeProject.id);
     
@@ -108,12 +151,18 @@ const ProjectView = () => {
   const handleFileUpload = async (file) => {
     if (!activeProject) return;
     
-    await addFile(file);
+    console.log('ProjectView: загружаем файл:', file.name);
+    
+    const result = await addFile(file);
+    return result;
   };
 
   // Обработчик удаления файла
   const handleFileRemove = async (fileId) => {
-    await deleteFile(fileId);
+    console.log('ProjectView: удаляем файл:', fileId);
+    
+    const result = await deleteFile(fileId);
+    return result;
   };
 
   if (!projectId) {
@@ -122,6 +171,16 @@ const ProjectView = () => {
         <Typography variant="h6" color="text.secondary">
           Выберите проект или создайте новый
         </Typography>
+      </Box>
+    );
+  }
+
+  // ИСПРАВЛЕНО: показываем загрузку только когда действительно загружаем
+  if (isLoading && !activeProject) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+        <CircularProgress />
+        <Typography sx={{ ml: 2 }}>Загрузка проекта...</Typography>
       </Box>
     );
   }
@@ -154,6 +213,11 @@ const ProjectView = () => {
           {activeProject && activeProject.description && (
             <Typography variant="body2" color="text.secondary">
               {activeProject.description}
+            </Typography>
+          )}
+          {activeProject && files && (
+            <Typography variant="caption" color="text.secondary">
+              Файлов: {files.length}
             </Typography>
           )}
         </Box>
@@ -191,11 +255,7 @@ const ProjectView = () => {
 
       {/* Основное содержимое */}
       <Box sx={{ flexGrow: 1, overflow: 'auto', p: 2 }}>
-        {isLoading && !activeProject ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-            <CircularProgress />
-          </Box>
-        ) : (
+        {activeProject ? (
           <Box>
             <Paper 
               elevation={1} 
@@ -219,6 +279,12 @@ const ProjectView = () => {
               />
             </Paper>
           </Box>
+        ) : (
+          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+            <Typography variant="h6" color="text.secondary">
+              Проект не найден
+            </Typography>
+          </Box>
         )}
       </Box>
 
@@ -237,6 +303,8 @@ const ProjectView = () => {
       <Dialog 
         open={editDialogOpen} 
         onClose={() => setEditDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
       >
         <DialogTitle>Редактировать проект</DialogTitle>
         <DialogContent>
@@ -268,6 +336,7 @@ const ProjectView = () => {
           <Button 
             onClick={handleUpdateProject} 
             variant="contained"
+            disabled={!title.trim()}
           >
             Сохранить
           </Button>
@@ -282,7 +351,8 @@ const ProjectView = () => {
         <DialogTitle>Удалить проект?</DialogTitle>
         <DialogContent>
           <Typography>
-            Вы уверены, что хотите удалить проект "{activeProject?.title || activeProject?.name || 'Проект без названия'}"? Это действие нельзя отменить.
+            Вы уверены, что хотите удалить проект "{activeProject?.title || activeProject?.name || 'Проект без названия'}"? 
+            Все файлы проекта будут удалены. Это действие нельзя отменить.
           </Typography>
         </DialogContent>
         <DialogActions>

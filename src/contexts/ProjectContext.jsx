@@ -24,6 +24,7 @@ const ActionTypes = {
   UPDATE_PROJECT: 'UPDATE_PROJECT',
   DELETE_PROJECT: 'DELETE_PROJECT',
   CLEAR_ERROR: 'CLEAR_ERROR',
+  CLEAR_FILES: 'CLEAR_FILES',
 };
 
 // Оптимизированный reducer
@@ -41,6 +42,8 @@ const projectReducer = (state, action) => {
       return { ...state, activeProject: action.payload, isLoading: false };
     case ActionTypes.SET_FILES:
       return { ...state, files: action.payload, isLoading: false };
+    case ActionTypes.CLEAR_FILES:
+      return { ...state, files: [], isLoading: false };
     case ActionTypes.ADD_FILE:
       return { ...state, files: [...state.files, action.payload], isLoading: false };
     case ActionTypes.UPDATE_FILE:
@@ -62,6 +65,7 @@ const projectReducer = (state, action) => {
         ...state,
         projects: [...state.projects, action.payload],
         activeProject: action.payload,
+        files: [], // Новый проект = пустые файлы
         isLoading: false,
       };
     case ActionTypes.UPDATE_PROJECT:
@@ -95,13 +99,22 @@ const ProjectContext = createContext();
 export const ProjectProvider = ({ children }) => {
   const [state, dispatch] = useReducer(projectReducer, initialState);
 
-  // Кеши для предотвращения повторных загрузок
-  const loadedProjects = useMemo(() => new Set(), []);
-  const loadedFiles = useMemo(() => new Map(), []);
+  // ИСПРАВЛЕНО: убираем агрессивное кеширование файлов
+  const projectsLoadedRef = React.useRef(false);
+  const currentProjectIdRef = React.useRef(null);
 
-  // Оптимизированная загрузка файлов с кешированием
-  const loadFiles = useCallback(async (projectId) => {
-    if (!projectId || loadedFiles.has(projectId)) return;
+  // ИСПРАВЛЕНО: загрузка файлов без кеширования
+  const loadFiles = useCallback(async (projectId, force = false) => {
+    if (!projectId) {
+      dispatch({ type: ActionTypes.CLEAR_FILES });
+      currentProjectIdRef.current = null;
+      return;
+    }
+    
+    // ИСПРАВЛЕНО: всегда загружаем файлы при смене проекта
+    if (!force && currentProjectIdRef.current === projectId) {
+      return; // Загружаем только если это другой проект
+    }
     
     try {
       dispatch({ type: ActionTypes.SET_LOADING, payload: true });
@@ -110,18 +123,21 @@ export const ProjectProvider = ({ children }) => {
         throw new Error('API недоступен');
       }
       
+      console.log('ProjectContext: загружаем файлы для проекта:', projectId);
       const files = await window.electronAPI.getProjectFiles(projectId);
+      console.log('ProjectContext: получено файлов:', files?.length || 0);
+      
       dispatch({ type: ActionTypes.SET_FILES, payload: files || [] });
-      loadedFiles.set(projectId, true);
+      currentProjectIdRef.current = projectId;
     } catch (error) {
       console.error('Error loading project files:', error);
       dispatch({ type: ActionTypes.SET_ERROR, payload: error.message });
     }
-  }, [loadedFiles]);
+  }, []);
 
-  // Оптимизированная загрузка проектов с файлами
+  // ИСПРАВЛЕНО: упрощенная загрузка проектов без файлов
   const loadProjects = useCallback(async () => {
-    if (loadedProjects.has('projects')) return;
+    if (projectsLoadedRef.current) return;
     
     try {
       dispatch({ type: ActionTypes.SET_LOADING, payload: true });
@@ -133,52 +149,45 @@ export const ProjectProvider = ({ children }) => {
         }
       }
       
+      console.log('ProjectContext: загружаем список проектов');
       const projects = await window.electronAPI.getProjects();
       
-      if (projects?.length > 0) {
-        // Загружаем файлы параллельно для всех проектов
-        const projectsWithFiles = await Promise.allSettled(
-          projects.map(async (project) => {
-            try {
-              const files = await window.electronAPI.getProjectFiles(project.id);
-              loadedFiles.set(project.id, true);
-              return { ...project, files: files || [] };
-            } catch (error) {
-              console.error(`Error loading files for project ${project.name}:`, error);
-              return { ...project, files: [] };
-            }
-          })
-        );
-        
-        const successfulProjects = projectsWithFiles
-          .filter(result => result.status === 'fulfilled')
-          .map(result => result.value);
-        
-        dispatch({ type: ActionTypes.SET_PROJECTS, payload: successfulProjects });
-      } else {
-        dispatch({ type: ActionTypes.SET_PROJECTS, payload: [] });
-      }
+      // ИСПРАВЛЕНО: не загружаем файлы сразу для всех проектов
+      // Файлы будут загружены только при выборе конкретного проекта
+      const projectsWithoutFiles = (projects || []).map(project => ({
+        ...project,
+        files: [] // Не загружаем файлы заранее
+      }));
       
-      loadedProjects.add('projects');
+      dispatch({ type: ActionTypes.SET_PROJECTS, payload: projectsWithoutFiles });
+      projectsLoadedRef.current = true;
+      
+      console.log('ProjectContext: загружено проектов:', projectsWithoutFiles.length);
     } catch (error) {
       console.error('Error loading projects:', error);
       dispatch({ type: ActionTypes.SET_ERROR, payload: error.message });
     }
-  }, [loadedProjects, loadedFiles]);
+  }, []);
 
   // Загружаем проекты только при монтировании
   useEffect(() => {
     loadProjects();
   }, [loadProjects]);
 
-  // Загружаем файлы при изменении активного проекта
-  useEffect(() => {
-    if (state.activeProject?.id) {
-      loadFiles(state.activeProject.id);
+  // ИСПРАВЛЕНО: правильная установка активного проекта
+  const setActiveProject = useCallback((project) => {
+    console.log('ProjectContext: устанавливаем активный проект:', project?.name || project?.title);
+    
+    dispatch({ type: ActionTypes.SET_ACTIVE_PROJECT, payload: project });
+    
+    // ИСПРАВЛЕНО: принудительно загружаем файлы для нового активного проекта
+    if (project?.id) {
+      loadFiles(project.id, true);
     } else {
-      dispatch({ type: ActionTypes.SET_FILES, payload: [] });
+      dispatch({ type: ActionTypes.CLEAR_FILES });
+      currentProjectIdRef.current = null;
     }
-  }, [state.activeProject?.id, loadFiles]);
+  }, [loadFiles]);
 
   // Оптимизированное создание проекта
   const createProject = useCallback(async (name, description = '') => {
@@ -192,26 +201,33 @@ export const ProjectProvider = ({ children }) => {
       const newProject = {
         id: uuidv4(),
         name,
+        title: name, // Для совместимости
         description,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         files: []
       };
       
+      console.log('ProjectContext: создаем проект:', newProject.name);
+      
+      // Сохраняем в БД
+      const result = await window.electronAPI.createProject(newProject);
+      if (!result?.success) {
+        throw new Error(result?.error || 'Ошибка создания проекта');
+      }
+      
       // Оптимистично добавляем в UI
       dispatch({ type: ActionTypes.CREATE_PROJECT, payload: newProject });
-      loadedFiles.set(newProject.id, true);
+      currentProjectIdRef.current = newProject.id;
       
-      // Затем сохраняем в БД
-      await window.electronAPI.createProject(newProject);
-      
+      console.log('ProjectContext: проект создан успешно');
       return newProject;
     } catch (error) {
       console.error('Error creating project:', error);
       dispatch({ type: ActionTypes.SET_ERROR, payload: error.message });
       return null;
     }
-  }, [loadedFiles]);
+  }, []);
 
   // Оптимизированное обновление проекта
   const updateProject = useCallback(async (projectId, updates) => {
@@ -224,6 +240,8 @@ export const ProjectProvider = ({ children }) => {
         ...updates,
         updatedAt: new Date().toISOString(),
       };
+      
+      console.log('ProjectContext: обновляем проект:', updatedProject.name || updatedProject.title);
       
       // Оптимистично обновляем UI
       dispatch({ type: ActionTypes.UPDATE_PROJECT, payload: updatedProject });
@@ -241,17 +259,18 @@ export const ProjectProvider = ({ children }) => {
     }
   }, [state.projects]);
 
-  // Установка активного проекта
-  const setActiveProject = useCallback((project) => {
-    dispatch({ type: ActionTypes.SET_ACTIVE_PROJECT, payload: project });
-  }, []);
-
   // Оптимизированное удаление проекта
   const deleteProject = useCallback(async (projectId) => {
     try {
+      console.log('ProjectContext: удаляем проект:', projectId);
+      
       // Оптимистично удаляем из UI
       dispatch({ type: ActionTypes.DELETE_PROJECT, payload: projectId });
-      loadedFiles.delete(projectId);
+      
+      // Если удаляем текущий проект, очищаем ссылки
+      if (currentProjectIdRef.current === projectId) {
+        currentProjectIdRef.current = null;
+      }
       
       // Затем удаляем из БД
       if (window.electronAPI) {
@@ -263,7 +282,7 @@ export const ProjectProvider = ({ children }) => {
       console.error('Error deleting project:', error);
       return true; // Возвращаем true для UI
     }
-  }, [loadedFiles]);
+  }, []);
 
   // Оптимизированное добавление файла
   const addFile = useCallback(async (file, description = '') => {
@@ -278,6 +297,8 @@ export const ProjectProvider = ({ children }) => {
       if (!window.electronAPI) {
         throw new Error('API недоступен');
       }
+      
+      console.log('ProjectContext: добавляем файл:', file.name, 'в проект:', state.activeProject.name);
       
       // Загружаем файл
       const uploadedFile = await window.electronAPI.uploadFile(file);
@@ -315,6 +336,7 @@ export const ProjectProvider = ({ children }) => {
         await window.electronAPI.updateProject(updatedProject);
       }
       
+      console.log('ProjectContext: файл добавлен успешно');
       return newFile;
     } catch (error) {
       console.error('Error adding file:', error);
@@ -337,6 +359,8 @@ export const ProjectProvider = ({ children }) => {
         updatedAt: new Date().toISOString(),
       };
       
+      console.log('ProjectContext: обновляем файл:', updatedFile.name);
+      
       // Оптимистично обновляем UI
       dispatch({ type: ActionTypes.UPDATE_FILE, payload: updatedFile });
       
@@ -357,6 +381,7 @@ export const ProjectProvider = ({ children }) => {
   const deleteFile = useCallback(async (fileId) => {
     try {
       const file = state.files.find(f => f.id === fileId);
+      console.log('ProjectContext: удаляем файл:', file?.name);
       
       // Оптимистично удаляем из UI
       dispatch({ type: ActionTypes.DELETE_FILE, payload: fileId });
@@ -381,6 +406,38 @@ export const ProjectProvider = ({ children }) => {
     dispatch({ type: ActionTypes.CLEAR_ERROR });
   }, []);
 
+  // ИСПРАВЛЕНО: добавляем метод для получения проекта с файлами
+  const getProjectWithFiles = useCallback(async (projectId) => {
+    try {
+      if (!window.electronAPI) {
+        throw new Error('API недоступен');
+      }
+      
+      // Ищем проект в списке
+      let project = state.projects.find(p => p.id === projectId);
+      
+      if (!project) {
+        // Если проект не найден, перезагружаем список
+        await loadProjects();
+        project = state.projects.find(p => p.id === projectId);
+      }
+      
+      if (project) {
+        // Загружаем файлы для проекта
+        const files = await window.electronAPI.getProjectFiles(projectId);
+        return {
+          ...project,
+          files: files || []
+        };
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Error getting project with files:', error);
+      return null;
+    }
+  }, [state.projects, loadProjects]);
+
   // Мемоизированное значение контекста
   const value = useMemo(() => ({
     ...state,
@@ -393,6 +450,7 @@ export const ProjectProvider = ({ children }) => {
     deleteFile,
     clearError,
     loadFiles,
+    getProjectWithFiles,
   }), [
     state,
     createProject,
@@ -403,7 +461,8 @@ export const ProjectProvider = ({ children }) => {
     updateFile,
     deleteFile,
     clearError,
-    loadFiles
+    loadFiles,
+    getProjectWithFiles
   ]);
 
   return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>;

@@ -24,6 +24,7 @@ const ActionTypes = {
   UPDATE_CHAT: 'UPDATE_CHAT',
   DELETE_CHAT: 'DELETE_CHAT',
   CLEAR_ERROR: 'CLEAR_ERROR',
+  CLEAR_MESSAGES: 'CLEAR_MESSAGES',
 };
 
 // Оптимизированный reducer с иммутабельными обновлениями
@@ -41,6 +42,8 @@ const chatReducer = (state, action) => {
       return { ...state, activeChat: action.payload, isLoading: false };
     case ActionTypes.SET_MESSAGES:
       return { ...state, messages: action.payload, isLoading: false };
+    case ActionTypes.CLEAR_MESSAGES:
+      return { ...state, messages: [], isLoading: false };
     case ActionTypes.ADD_MESSAGE:
       return {
         ...state,
@@ -102,13 +105,13 @@ const ChatContext = createContext();
 export const ChatProvider = ({ children }) => {
   const [state, dispatch] = useReducer(chatReducer, initialState);
 
-  // Кеш для предотвращения повторных загрузок
-  const loadedChats = useMemo(() => new Set(), []);
-  const loadedMessages = useMemo(() => new Map(), []);
+  // ИСПРАВЛЕНО: убираем агрессивное кеширование
+  const chatsLoadedRef = React.useRef(false);
+  const currentChatIdRef = React.useRef(null);
 
-  // Оптимизированная загрузка чатов с кешированием
+  // Оптимизированная загрузка чатов
   const loadChats = useCallback(async () => {
-    if (loadedChats.has('chats')) return;
+    if (chatsLoadedRef.current) return;
     
     try {
       dispatch({ type: ActionTypes.SET_LOADING, payload: true });
@@ -122,16 +125,24 @@ export const ChatProvider = ({ children }) => {
       
       const chats = await window.electronAPI.getChats();
       dispatch({ type: ActionTypes.SET_CHATS, payload: chats || [] });
-      loadedChats.add('chats');
+      chatsLoadedRef.current = true;
     } catch (error) {
       console.error('Error loading chats:', error);
       dispatch({ type: ActionTypes.SET_ERROR, payload: error.message });
     }
-  }, [loadedChats]);
+  }, []);
 
-  // Оптимизированная загрузка сообщений с кешированием
-  const loadMessages = useCallback(async (chatId) => {
-    if (!chatId || loadedMessages.has(chatId)) return;
+  // ИСПРАВЛЕНО: загрузка сообщений без кеширования
+  const loadMessages = useCallback(async (chatId, force = false) => {
+    if (!chatId) {
+      dispatch({ type: ActionTypes.CLEAR_MESSAGES });
+      return;
+    }
+    
+    // ИСПРАВЛЕНО: всегда загружаем сообщения при смене чата
+    if (!force && currentChatIdRef.current === chatId) {
+      return; // Загружаем только если это другой чат
+    }
     
     try {
       dispatch({ type: ActionTypes.SET_LOADING, payload: true });
@@ -140,52 +151,65 @@ export const ChatProvider = ({ children }) => {
         throw new Error('API недоступен');
       }
       
+      console.log('ChatContext: загружаем сообщения для чата:', chatId);
       const messages = await window.electronAPI.getMessages(chatId);
+      console.log('ChatContext: получено сообщений:', messages?.length || 0);
+      
       dispatch({ type: ActionTypes.SET_MESSAGES, payload: messages || [] });
-      loadedMessages.set(chatId, true);
+      currentChatIdRef.current = chatId;
     } catch (error) {
       console.error('Error loading messages:', error);
       dispatch({ type: ActionTypes.SET_ERROR, payload: error.message });
     }
-  }, [loadedMessages]);
+  }, []);
 
   // Загрузка чатов только при монтировании
   useEffect(() => {
     loadChats();
   }, [loadChats]);
 
-  // Загрузка сообщений при изменении активного чата
-  useEffect(() => {
-    if (state.activeChat?.id) {
-      loadMessages(state.activeChat.id);
-    } else {
-      dispatch({ type: ActionTypes.SET_MESSAGES, payload: [] });
-    }
-  }, [state.activeChat?.id, loadMessages]);
-
-  // Оптимизированная загрузка чата
+  // ИСПРАВЛЕНО: правильная обработка смены активного чата
   const loadChat = useCallback(async (chatId) => {
     try {
-      dispatch({ type: ActionTypes.SET_LOADING, payload: true });
+      console.log('ChatContext: loadChat вызван для:', chatId);
       
       if (chatId === 'new') {
+        console.log('ChatContext: устанавливаем новый чат');
         dispatch({ type: ActionTypes.SET_ACTIVE_CHAT, payload: null });
-        dispatch({ type: ActionTypes.SET_MESSAGES, payload: [] });
+        dispatch({ type: ActionTypes.CLEAR_MESSAGES });
+        currentChatIdRef.current = null;
         return null;
       }
       
-      // Ищем в кеше
+      // ИСПРАВЛЕНО: всегда перезагружаем чаты если они не загружены
+      if (!chatsLoadedRef.current) {
+        await loadChats();
+      }
+      
+      // Ищем чат в загруженных данных
       let chat = state.chats.find(c => c.id === chatId);
       
-      if (!chat && !loadedChats.has('chats')) {
+      // ИСПРАВЛЕНО: если чат не найден, перезагружаем список чатов
+      if (!chat) {
+        console.log('ChatContext: чат не найден, перезагружаем список чатов');
+        chatsLoadedRef.current = false;
         await loadChats();
+        
+        // Ждем обновления состояния и ищем снова
+        await new Promise(resolve => setTimeout(resolve, 100));
         chat = state.chats.find(c => c.id === chatId);
       }
       
       if (chat) {
+        console.log('ChatContext: устанавливаем активный чат:', chat.title);
         dispatch({ type: ActionTypes.SET_ACTIVE_CHAT, payload: chat });
+        
+        // ИСПРАВЛЕНО: принудительно загружаем сообщения для этого чата
+        await loadMessages(chatId, true);
+        
         return chat;
       } else {
+        console.error('ChatContext: чат не найден:', chatId);
         dispatch({ type: ActionTypes.SET_ERROR, payload: 'Чат не найден' });
         return null;
       }
@@ -194,9 +218,9 @@ export const ChatProvider = ({ children }) => {
       dispatch({ type: ActionTypes.SET_ERROR, payload: error.message });
       return null;
     }
-  }, [state.chats, loadChats, loadedChats]);
+  }, [state.chats, loadChats, loadMessages]);
 
-  // Оптимизированное создание чата
+  // Создание чата
   const createChat = useCallback(async (title) => {
     try {
       dispatch({ type: ActionTypes.SET_LOADING, payload: true });
@@ -219,7 +243,7 @@ export const ChatProvider = ({ children }) => {
       }
       
       dispatch({ type: ActionTypes.CREATE_CHAT, payload: newChat });
-      loadedMessages.set(newChat.id, true); // Помечаем как загруженный (пустой)
+      currentChatIdRef.current = newChat.id;
       
       return newChat;
     } catch (error) {
@@ -227,9 +251,9 @@ export const ChatProvider = ({ children }) => {
       dispatch({ type: ActionTypes.SET_ERROR, payload: error.message });
       return null;
     }
-  }, [loadedMessages]);
+  }, []);
 
-  // Оптимизированное обновление чата
+  // Обновление чата
   const updateChat = useCallback(async (chatId, updates) => {
     try {
       const chat = state.chats.find(c => c.id === chatId);
@@ -257,14 +281,18 @@ export const ChatProvider = ({ children }) => {
     }
   }, [state.chats]);
 
-  // Оптимизированное удаление чата
+  // Удаление чата
   const deleteChat = useCallback(async (chatId) => {
     try {
       if (!chatId) return false;
       
       // Оптимистично удаляем из UI
       dispatch({ type: ActionTypes.DELETE_CHAT, payload: chatId });
-      loadedMessages.delete(chatId);
+      
+      // Если удаляем текущий чат, очищаем ссылки
+      if (currentChatIdRef.current === chatId) {
+        currentChatIdRef.current = null;
+      }
       
       // Затем удаляем из БД
       if (window.electronAPI) {
@@ -276,9 +304,9 @@ export const ChatProvider = ({ children }) => {
       console.error('Error deleting chat:', error);
       return true; // Возвращаем true для UI
     }
-  }, [loadedMessages]);
+  }, []);
 
-  // Максимально оптимизированная отправка сообщения
+  // ИСПРАВЛЕНО: отправка сообщения с правильной обработкой состояния
   const sendMessage = useCallback(async (content, files = [], projectFiles = []) => {
     let currentChat = state.activeChat;
     
