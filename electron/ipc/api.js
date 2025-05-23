@@ -17,7 +17,6 @@ class ClaudeAPIHandler {
   constructor() {
     this.baseUrl = 'https://api.anthropic.com';
     this.apiVersion = '2023-06-01';
-    // УБИРАЕМ принудительную установку дефолтной модели
     
     // Инициализируем пустой кеш настроек
     this.cachedSettings = {};
@@ -140,6 +139,15 @@ class ClaudeAPIHandler {
     }
   }
 
+  // Проверка модели на принадлежность к Claude 4
+  isClaude4Model(modelName) {
+    return modelName && (
+      modelName.includes('claude-opus-4') || 
+      modelName.includes('claude-sonnet-4') ||
+      modelName.includes('claude-4')
+    );
+  }
+
   // Send message to Claude API
   async sendMessageToClaudeAI(content, attachments = [], history = []) {
     const apiKey = await this.getApiKey();
@@ -157,7 +165,7 @@ class ClaudeAPIHandler {
     // Prepare message content array
     const messageContent = [];
     
-    // ИСПРАВЛЕНО: Разделяем файлы сообщения и файлы проекта
+    // Разделяем файлы сообщения и файлы проекта
     const messageFiles = [];
     const projectFiles = [];
     
@@ -330,8 +338,21 @@ class ClaudeAPIHandler {
       content: messageContent
     });
     
+    // Получаем актуальные настройки
+    const settings = await this.getSettings();
+    console.log('Получены настройки для API запроса:', settings);
+    
+    // Используем настройки БЕЗ принудительных значений по умолчанию
+    const modelName = settings.model || 'claude-3-7-sonnet-20250219';
+    const maxTokens = settings.maxTokens || 4096;
+    const temperature = settings.temperature || 0.7;
+    const topP = settings.topP || 1.0;
+    
+    // Специальная обработка для Claude 4
+    const isClaude4 = this.isClaude4Model(modelName);
+    
     // Системное сообщение с улучшенными инструкциями
-    const systemPrompt = `Ты полезный ассистент Claude. 
+    let systemPrompt = `Ты полезный ассистент Claude. 
 
 ВАЖНЫЕ ИНСТРУКЦИИ:
 1. Если в сообщении есть секция "=== КОНТЕКСТ ПРОЕКТА ===", то файлы в этой секции - это файлы проекта пользователя. Используй их как справочную информацию для понимания контекста работы.
@@ -353,18 +374,17 @@ class ClaudeAPIHandler {
   * text/html - для HTML страниц
 
 Всегда отвечай на русском языке, если не попросят иначе.`;
+
+    // Дополнительные инструкции для Claude 4
+    if (isClaude4) {
+      systemPrompt += `\n\nТы используешь модель ${modelName} из семейства Claude 4. Используй свои расширенные возможности для:
+- Более глубокого понимания контекста
+- Генерации более сложного и качественного кода
+- Работы с большими объемами данных
+- Решения комплексных задач требующих многоэтапного мышления`;
+    }
     
-    // Получаем актуальные настройки
-    const settings = await this.getSettings();
-    console.log('Получены настройки для API запроса:', settings);
-    
-    // Используем настройки БЕЗ принудительных значений по умолчанию
-    const modelName = settings.model || 'claude-3-7-sonnet-20250219';
-    const maxTokens = settings.maxTokens || 4096;
-    const temperature = settings.temperature || 0.7;
-    const topP = settings.topP || 1.0;
-    
-    console.log(`ВАЖНО: Используется модель из настроек: ${modelName}`);
+    console.log(`ВАЖНО: Используется модель из настроек: ${modelName} (Claude 4: ${isClaude4})`);
     
     // Make API request to Claude
     try {
@@ -379,13 +399,20 @@ class ClaudeAPIHandler {
         top_p: topP
       };
       
+      // Для Claude 4 можем использовать увеличенные лимиты токенов
+      if (isClaude4 && maxTokens < 8192) {
+        requestData.max_tokens = 8192;
+        console.log('Claude 4: увеличиваем лимит токенов до 8192');
+      }
+      
       console.log('Request data summary:', {
         model: requestData.model,
         max_tokens: requestData.max_tokens,
         temperature: requestData.temperature,
         top_p: requestData.top_p,
         messagesCount: requestData.messages.length,
-        currentMessageContentParts: messageContent.length
+        currentMessageContentParts: messageContent.length,
+        isClaude4: isClaude4
       });
       
       const response = await axios.post(
@@ -397,7 +424,7 @@ class ClaudeAPIHandler {
             'anthropic-version': this.apiVersion,
             'Content-Type': 'application/json'
           },
-          timeout: 60000
+          timeout: isClaude4 ? 120000 : 60000 // Увеличенный таймаут для Claude 4
         }
       );
       

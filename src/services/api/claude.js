@@ -16,15 +16,28 @@ const createApiInstance = (apiKey) => {
   });
 };
 
+// Проверка модели на принадлежность к Claude 4
+const isClaude4Model = (modelName) => {
+  return modelName && (
+    modelName.includes('claude-opus-4') || 
+    modelName.includes('claude-sonnet-4') ||
+    modelName.includes('claude-4')
+  );
+};
+
 // Отправка сообщения Claude
 const sendMessage = async (apiKey, message, files = [], projectFiles = []) => {
   try {
     const api = createApiInstance(apiKey);
     
+    // Получаем модель из настроек (в реальном приложении нужно передавать из настроек)
+    const modelName = 'claude-3-7-sonnet-20250219'; // Значение по умолчанию
+    const isClaude4 = isClaude4Model(modelName);
+    
     // Создаем объект запроса
     const requestData = {
-      model: 'claude-3-7-sonnet-20250219',
-      max_tokens: 4096,
+      model: modelName,
+      max_tokens: isClaude4 ? 8192 : 4096,
       messages: [
         {
           role: 'user',
@@ -44,7 +57,9 @@ const sendMessage = async (apiKey, message, files = [], projectFiles = []) => {
   * image/svg+xml - для SVG
   * text/html - для HTML страниц
 
-Всегда отвечай на русском языке, если не попросят иначе.`
+Всегда отвечай на русском языке, если не попросят иначе.${
+    isClaude4 ? `\n\nТы используешь модель ${modelName} из семейства Claude 4. Используй свои расширенные возможности для более глубокого анализа и генерации качественного контента.` : ''
+  }`
     };
     
     // Добавляем текст сообщения, если он есть
@@ -120,6 +135,11 @@ const sendMessage = async (apiKey, message, files = [], projectFiles = []) => {
     }
 
     console.log('Отправка запроса к Claude API:', JSON.stringify(requestData, null, 2));
+
+    // Увеличиваем таймаут для Claude 4
+    if (isClaude4) {
+      api.defaults.timeout = 120000; // 2 минуты для Claude 4
+    }
 
     // Отправляем запрос
     const response = await api.post('/v1/messages', requestData);
@@ -198,4 +218,5 @@ const checkApiKey = async (apiKey) => {
 module.exports = {
   sendMessage,
   checkApiKey,
+  isClaude4Model,
 };

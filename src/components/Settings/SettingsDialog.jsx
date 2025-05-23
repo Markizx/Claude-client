@@ -24,6 +24,7 @@ import {
   IconButton,
   CircularProgress,
   Snackbar,
+  Chip,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import SaveIcon from '@mui/icons-material/Save';
@@ -306,13 +307,52 @@ const SettingsDialog = ({ open, onClose }) => {
     onClose();
   };
 
-  // ОБНОВЛЕННЫЙ список доступных моделей с правильными значениями
+  // ОБНОВЛЕННЫЙ список доступных моделей с Claude 4
   const availableModels = [
-    { value: 'claude-3-7-sonnet-20250219', label: 'Claude 3.7 Sonnet (рекомендуется)' },
-    { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
-    { value: 'claude-3-opus-20240229', label: 'Claude 3 Opus (мощная)' },
-    { value: 'claude-3-haiku-20240307', label: 'Claude 3 Haiku (быстрая)' },
+    { 
+      value: 'claude-opus-4-20250514', 
+      label: 'Claude 4 Opus',
+      description: 'Самая мощная модель для сложных задач',
+      chip: 'NEW',
+      chipColor: 'error'
+    },
+    { 
+      value: 'claude-sonnet-4-20250514', 
+      label: 'Claude 4 Sonnet',
+      description: 'Оптимальный баланс производительности',
+      chip: 'NEW',
+      chipColor: 'warning'
+    },
+    { 
+      value: 'claude-3-7-sonnet-20250219', 
+      label: 'Claude 3.7 Sonnet',
+      description: 'Рекомендуется для большинства задач',
+      chip: 'РЕКОМЕНДУЕТСЯ',
+      chipColor: 'success'
+    },
+    { 
+      value: 'claude-3-5-sonnet-20241022', 
+      label: 'Claude 3.5 Sonnet',
+      description: 'Предыдущая стабильная версия'
+    },
+    { 
+      value: 'claude-3-opus-20240229', 
+      label: 'Claude 3 Opus',
+      description: 'Классическая мощная модель'
+    },
+    { 
+      value: 'claude-3-haiku-20240307', 
+      label: 'Claude 3 Haiku',
+      description: 'Быстрая модель для простых задач'
+    },
   ];
+
+  // Функция для получения информации о модели
+  const getModelInfo = (modelValue) => {
+    return availableModels.find(model => model.value === modelValue) || availableModels[2];
+  };
+
+  const currentModelInfo = getModelInfo(localSettings.model);
 
   return (
     <>
@@ -368,7 +408,7 @@ const SettingsDialog = ({ open, onClose }) => {
 
           {hasChanges && (
             <Alert severity="info" sx={{ mb: 2 }}>
-              У вас есть несохраненные изменения. Модель: {localSettings.model}
+              У вас есть несохраненные изменения. Модель: {currentModelInfo.label}
             </Alert>
           )}
           
@@ -439,8 +479,13 @@ const SettingsDialog = ({ open, onClose }) => {
             <Box sx={{ space: 3 }}>
               <Alert severity="info" sx={{ mb: 3 }}>
                 <Typography variant="body2">
-                  <strong>Текущая модель:</strong> {localSettings.model}
+                  <strong>Текущая модель:</strong> {currentModelInfo.label}
                 </Typography>
+                {currentModelInfo.description && (
+                  <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
+                    {currentModelInfo.description}
+                  </Typography>
+                )}
               </Alert>
 
               <FormControl fullWidth sx={{ mb: 3 }}>
@@ -453,11 +498,31 @@ const SettingsDialog = ({ open, onClose }) => {
                 >
                   {availableModels.map(model => (
                     <MenuItem key={model.value} value={model.value}>
-                      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-                        <Typography variant="body1">
-                          {model.label}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
+                      <Box sx={{ 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        alignItems: 'flex-start',
+                        width: '100%'
+                      }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                          <Typography variant="body1">
+                            {model.label}
+                          </Typography>
+                          {model.chip && (
+                            <Chip 
+                              label={model.chip} 
+                              size="small" 
+                              color={model.chipColor || 'default'}
+                              sx={{ height: 20 }}
+                            />
+                          )}
+                        </Box>
+                        {model.description && (
+                          <Typography variant="caption" color="text.secondary">
+                            {model.description}
+                          </Typography>
+                        )}
+                        <Typography variant="caption" color="text.disabled" sx={{ fontSize: '0.7rem' }}>
                           {model.value}
                         </Typography>
                       </Box>
@@ -474,6 +539,7 @@ const SettingsDialog = ({ open, onClose }) => {
                 onChange={(e) => handleInputChange('maxTokens', parseInt(e.target.value) || 4096)}
                 inputProps={{ min: 1, max: 8192 }}
                 sx={{ mb: 3 }}
+                helperText="Максимальное количество токенов в ответе (1-8192)"
               />
 
               <Typography gutterBottom>
@@ -489,6 +555,9 @@ const SettingsDialog = ({ open, onClose }) => {
                 valueLabelDisplay="auto"
                 sx={{ mb: 3 }}
               />
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2, mt: -2 }}>
+                Контролирует случайность ответов. Низкие значения делают ответы более предсказуемыми.
+              </Typography>
 
               <Typography gutterBottom>
                 Top P: {localSettings.topP || 1.0}
@@ -503,12 +572,24 @@ const SettingsDialog = ({ open, onClose }) => {
                 valueLabelDisplay="auto"
                 sx={{ mb: 3 }}
               />
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2, mt: -2 }}>
+                Альтернативный способ контроля случайности. Используйте либо температуру, либо Top P.
+              </Typography>
 
               <Alert severity="warning" sx={{ mt: 2 }}>
                 <Typography variant="body2">
                   <strong>Важно:</strong> После изменения модели нажмите "Сохранить" для применения изменений.
                 </Typography>
               </Alert>
+
+              {(localSettings.model === 'claude-opus-4-20250514' || localSettings.model === 'claude-sonnet-4-20250514') && (
+                <Alert severity="info" sx={{ mt: 2 }}>
+                  <Typography variant="body2">
+                    <strong>Claude 4:</strong> Вы выбрали модель из нового поколения Claude 4. 
+                    Эти модели обладают улучшенными возможностями понимания контекста и генерации кода.
+                  </Typography>
+                </Alert>
+              )}
             </Box>
           </TabPanel>
 
@@ -704,7 +785,7 @@ const SettingsDialog = ({ open, onClose }) => {
           variant="filled"
           sx={{ width: '100%' }}
         >
-          Настройки успешно сохранены! Модель: {localSettings.model}
+          Настройки успешно сохранены! Модель: {currentModelInfo.label}
         </Alert>
       </Snackbar>
     </>
