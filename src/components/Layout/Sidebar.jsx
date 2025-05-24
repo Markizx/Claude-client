@@ -21,6 +21,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import CloseIcon from '@mui/icons-material/Close';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
 import { useChat } from '../../contexts/ChatContext';
 import { useProject } from '../../contexts/ProjectContext';
 import ChatList from '../Chat/ChatList';
@@ -134,35 +135,112 @@ const Sidebar = ({ onItemClick }) => {
   };
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', p: 2 }}>
-      {/* Заголовок */}
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 2 }}>
-        <Typography variant="h6">
-          Claude Desktop
-        </Typography>
+    <Box sx={{ 
+      display: 'flex', 
+      flexDirection: 'column', 
+      height: '100%', 
+      p: 2,
+      background: 'var(--background-secondary)',
+      position: 'relative',
+      '&::before': {
+        content: '""',
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: (theme) => theme.palette.mode === 'dark' 
+          ? 'radial-gradient(circle at top left, rgba(0, 217, 255, 0.05) 0%, transparent 50%)'
+          : 'radial-gradient(circle at top left, rgba(99, 102, 241, 0.05) 0%, transparent 50%)',
+        pointerEvents: 'none',
+      }
+    }}>
+      {/* Заголовок с градиентом */}
+      <Box sx={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'space-between', 
+        py: 2,
+        position: 'relative',
+        zIndex: 1
+      }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Box sx={{
+            background: 'var(--gradient-primary)',
+            borderRadius: '12px',
+            p: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: (theme) => theme.palette.mode === 'dark' 
+              ? '0 4px 20px rgba(0, 217, 255, 0.4)' 
+              : '0 4px 20px rgba(99, 102, 241, 0.4)',
+          }}>
+            <SmartToyIcon sx={{ color: 'white', fontSize: 24 }} />
+          </Box>
+          <Typography 
+            variant="h6" 
+            sx={{ 
+              fontWeight: 600,
+              background: 'var(--gradient-primary)',
+              backgroundClip: 'text',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+            }}
+          >
+            SmartChat.ai
+          </Typography>
+        </Box>
         <Box>
           <Tooltip title="Поиск">
-            <IconButton size="small" onClick={() => setSearchDialogOpen(true)}>
+            <IconButton 
+              size="small" 
+              onClick={() => setSearchDialogOpen(true)}
+              sx={{ 
+                color: 'var(--text-secondary)',
+                '&:hover': {
+                  color: 'var(--accent-primary)',
+                  background: 'var(--background-hover)',
+                }
+              }}
+            >
               <SearchIcon />
             </IconButton>
           </Tooltip>
           <Tooltip title="Настройки">
-            <IconButton size="small" onClick={handleSettingsClick}>
+            <IconButton 
+              size="small" 
+              onClick={handleSettingsClick}
+              sx={{ 
+                color: 'var(--text-secondary)',
+                '&:hover': {
+                  color: 'var(--accent-primary)',
+                  background: 'var(--background-hover)',
+                }
+              }}
+            >
               <SettingsIcon />
             </IconButton>
           </Tooltip>
         </Box>
       </Box>
 
-      {/* Кнопки создания */}
-      <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+      {/* Кнопки создания с градиентом */}
+      <Box sx={{ display: 'flex', gap: 1, mb: 2, position: 'relative', zIndex: 1 }}>
         <Button
           fullWidth
           variant="contained"
-          color="primary"
           startIcon={<AddIcon />}
           onClick={() => setNewChatDialogOpen(true)}
-          sx={{ borderRadius: 2 }}
+          sx={{ 
+            borderRadius: 'var(--border-radius-lg)',
+            background: 'var(--gradient-button)',
+            boxShadow: '0 4px 15px rgba(99, 102, 241, 0.3)',
+            '&:hover': {
+              transform: 'translateY(-2px)',
+              boxShadow: '0 6px 20px rgba(99, 102, 241, 0.4)',
+            }
+          }}
         >
           Новый чат
         </Button>
@@ -171,13 +249,21 @@ const Sidebar = ({ onItemClick }) => {
           variant="outlined"
           startIcon={<AddIcon />}
           onClick={() => setNewProjectDialogOpen(true)}
-          sx={{ borderRadius: 2 }}
+          sx={{ 
+            borderRadius: 'var(--border-radius-lg)',
+            borderColor: 'var(--border-color)',
+            color: 'var(--text-primary)',
+            '&:hover': {
+              borderColor: 'var(--accent-primary)',
+              background: 'var(--background-hover)',
+            }
+          }}
         >
           Проект
         </Button>
       </Box>
 
-      <Divider sx={{ my: 1 }} />
+      <Divider sx={{ my: 1, borderColor: 'var(--border-color)' }} />
 
       {/* Секция чатов */}
       <Box sx={{ mb: 2 }}>
@@ -189,12 +275,12 @@ const Sidebar = ({ onItemClick }) => {
             cursor: 'pointer',
             py: 1,
             px: 1,
-            borderRadius: 1,
-            '&:hover': { bgcolor: 'action.hover' }
+            borderRadius: 'var(--border-radius-sm)',
+            '&:hover': { bgcolor: 'var(--background-hover)' }
           }}
           onClick={() => setChatsExpanded(!chatsExpanded)}
         >
-          <Typography variant="subtitle2" color="text.secondary">
+          <Typography variant="subtitle2" color="var(--text-secondary)">
             Чаты ({chats.length})
           </Typography>
           <IconButton size="small">
@@ -212,7 +298,7 @@ const Sidebar = ({ onItemClick }) => {
         </Collapse>
       </Box>
 
-      <Divider sx={{ my: 1 }} />
+      <Divider sx={{ my: 1, borderColor: 'var(--border-color)' }} />
 
       {/* Секция проектов */}
       <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
@@ -224,12 +310,12 @@ const Sidebar = ({ onItemClick }) => {
             cursor: 'pointer',
             py: 1,
             px: 1,
-            borderRadius: 1,
-            '&:hover': { bgcolor: 'action.hover' }
+            borderRadius: 'var(--border-radius-sm)',
+            '&:hover': { bgcolor: 'var(--background-hover)' }
           }}
           onClick={() => setProjectsExpanded(!projectsExpanded)}
         >
-          <Typography variant="subtitle2" color="text.secondary">
+          <Typography variant="subtitle2" color="var(--text-secondary)">
             Проекты ({projects.length})
           </Typography>
           <IconButton size="small">
@@ -365,10 +451,14 @@ const Sidebar = ({ onItemClick }) => {
                       p: 2,
                       mb: 1,
                       border: '1px solid',
-                      borderColor: 'divider',
-                      borderRadius: 1,
+                      borderColor: 'var(--border-color)',
+                      borderRadius: 'var(--border-radius)',
                       cursor: 'pointer',
-                      '&:hover': { bgcolor: 'action.hover' }
+                      transition: 'var(--transition)',
+                      '&:hover': { 
+                        bgcolor: 'var(--background-hover)',
+                        borderColor: 'var(--accent-primary)',
+                      }
                     }}
                   >
                     <Typography variant="subtitle2" sx={{ mb: 0.5 }}>

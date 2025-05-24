@@ -149,7 +149,21 @@ class ClaudeAPIHandler {
   }
 
   // Send message to Claude API
-  async sendMessageToClaudeAI(content, attachments = [], history = []) {
+  async sendMessageToClaudeAI(params) {
+    // ИСПРАВЛЕНО: обрабатываем объект параметров
+    let content, attachments, history;
+    
+    if (typeof params === 'object' && params !== null) {
+      content = params.content || '';
+      attachments = params.attachments || [];
+      history = params.history || [];
+    } else {
+      // Если передана строка, используем её как content
+      content = String(params || '');
+      attachments = [];
+      history = [];
+    }
+
     const apiKey = await this.getApiKey();
     
     if (!apiKey) {
@@ -158,9 +172,15 @@ class ClaudeAPIHandler {
 
     console.log('sendMessageToClaudeAI вызван с параметрами:', {
       contentLength: content?.length || 0,
+      contentType: typeof content,
       attachmentsCount: attachments?.length || 0,
       historyLength: history?.length || 0
     });
+
+    // ВАЖНО: Проверяем наличие контента
+    if (!content || (typeof content === 'string' && !content.trim())) {
+      throw new Error('Сообщение не может быть пустым');
+    }
 
     // Prepare message content array
     const messageContent = [];
@@ -186,19 +206,13 @@ class ClaudeAPIHandler {
     
     // Добавляем КОНТЕКСТ ПРОЕКТА В НАЧАЛО, если есть файлы проекта
     if (projectFiles.length > 0) {
-      messageContent.push({
-        type: 'text',
-        text: '=== КОНТЕКСТ ПРОЕКТА ==='
-      });
+      let projectContext = '=== КОНТЕКСТ ПРОЕКТА ===\n\n';
       
       for (const projectFile of projectFiles) {
         try {
           if (!projectFile.path || !fs.existsSync(projectFile.path)) {
             console.warn(`Project file not found: ${projectFile.path}`);
-            messageContent.push({
-              type: 'text',
-              text: `[ФАЙЛ ПРОЕКТА НЕДОСТУПЕН: ${projectFile.name}]`
-            });
+            projectContext += `[ФАЙЛ ПРОЕКТА НЕДОСТУПЕН: ${projectFile.name}]\n\n`;
             continue;
           }
           
@@ -208,7 +222,7 @@ class ClaudeAPIHandler {
           console.log(`Обрабатываем файл проекта: ${projectFile.name} (${mediaType})`);
           
           if (this.isImageFile(mediaType)) {
-            // Для изображений используем тип image
+            // Для изображений добавляем как отдельный элемент контента
             messageContent.push({
               type: 'image',
               source: {
@@ -217,41 +231,36 @@ class ClaudeAPIHandler {
                 data: fileBuffer.toString('base64')
               }
             });
-            console.log(`Added project image: ${projectFile.name}`);
+            projectContext += `[ИЗОБРАЖЕНИЕ ПРОЕКТА: ${projectFile.name}]\n\n`;
           } else {
-            // Для текстовых документов - преобразуем в текст
+            // Для текстовых документов - добавляем в текстовый контекст
             try {
               const textContent = fileBuffer.toString('utf8');
-              messageContent.push({
-                type: 'text',
-                text: `### ФАЙЛ ПРОЕКТА: ${projectFile.name} ###\n\n${textContent}\n\n### КОНЕЦ ФАЙЛА: ${projectFile.name} ###`
-              });
-              console.log(`Added project text file: ${projectFile.name} (${textContent.length} chars)`);
+              projectContext += `### ФАЙЛ ПРОЕКТА: ${projectFile.name} ###\n${textContent}\n### КОНЕЦ ФАЙЛА: ${projectFile.name} ###\n\n`;
             } catch (error) {
               console.error(`Error converting project file ${projectFile.name} to text:`, error);
-              messageContent.push({
-                type: 'text',
-                text: `[ФАЙЛ ПРОЕКТА (бинарный): ${projectFile.name}, тип: ${mediaType}, размер: ${fileBuffer.length} байт]`
-              });
+              projectContext += `[ФАЙЛ ПРОЕКТА (бинарный): ${projectFile.name}, тип: ${mediaType}, размер: ${fileBuffer.length} байт]\n\n`;
             }
           }
         } catch (fileError) {
           console.error(`Error processing project file ${projectFile.name}:`, fileError);
-          messageContent.push({
-            type: 'text',
-            text: `[ОШИБКА ОБРАБОТКИ ФАЙЛА ПРОЕКТА: ${projectFile.name}]`
-          });
+          projectContext += `[ОШИБКА ОБРАБОТКИ ФАЙЛА ПРОЕКТА: ${projectFile.name}]\n\n`;
         }
       }
       
+      projectContext += '=== КОНЕЦ КОНТЕКСТА ПРОЕКТА ===\n\n';
+      
+      // Добавляем контекст проекта как первый текстовый элемент
       messageContent.push({
         type: 'text',
-        text: '=== КОНЕЦ КОНТЕКСТА ПРОЕКТА ===\n\n'
+        text: projectContext
       });
     }
     
     // Добавляем ОБЫЧНЫЕ ПРИКРЕПЛЕННЫЕ ФАЙЛЫ
     if (messageFiles.length > 0) {
+      let attachmentsContext = '';
+      
       for (const attachment of messageFiles) {
         try {
           if (!attachment.path || !fs.existsSync(attachment.path)) {
@@ -273,33 +282,32 @@ class ClaudeAPIHandler {
                 data: fileBuffer.toString('base64')
               }
             });
-            console.log(`Added message image: ${attachment.name}`);
           } else {
             try {
               const textContent = fileBuffer.toString('utf8');
-              messageContent.push({
-                type: 'text',
-                text: `### ПРИКРЕПЛЕННЫЙ ФАЙЛ: ${attachment.name} ###\n\n${textContent}\n\n### КОНЕЦ ФАЙЛА: ${attachment.name} ###`
-              });
-              console.log(`Added message text file: ${attachment.name} (${textContent.length} chars)`);
+              attachmentsContext += `### ПРИКРЕПЛЕННЫЙ ФАЙЛ: ${attachment.name} ###\n${textContent}\n### КОНЕЦ ФАЙЛА: ${attachment.name} ###\n\n`;
             } catch (error) {
               console.error(`Error converting message file ${attachment.name} to text:`, error);
-              messageContent.push({
-                type: 'text',
-                text: `[ПРИКРЕПЛЕННЫЙ ФАЙЛ (бинарный): ${attachment.name}, тип: ${mediaType}, размер: ${fileBuffer.length} байт]`
-              });
+              attachmentsContext += `[ПРИКРЕПЛЕННЫЙ ФАЙЛ (бинарный): ${attachment.name}, тип: ${mediaType}, размер: ${fileBuffer.length} байт]\n\n`;
             }
           }
         } catch (fileError) {
           console.error(`Error processing message file ${attachment.name}:`, fileError);
         }
       }
+      
+      if (attachmentsContext) {
+        messageContent.push({
+          type: 'text',
+          text: attachmentsContext
+        });
+      }
     }
     
     // Добавляем ОСНОВНОЙ ТЕКСТ СООБЩЕНИЯ
     messageContent.push({
       type: 'text',
-      text: content || 'Привет!'
+      text: String(content) // Принудительно преобразуем в строку
     });
     
     console.log(`Подготовлено содержимое сообщения с ${messageContent.length} элементами`);
@@ -310,22 +318,25 @@ class ClaudeAPIHandler {
     // Add conversation history
     if (history && history.length > 0) {
       for (const message of history) {
-        if (!message || !message.role) continue;
+        if (!message || !message.role || !message.content) continue;
+        
+        // Пропускаем сообщения с пустым контентом
+        if (typeof message.content === 'string' && !message.content.trim()) {
+          continue;
+        }
         
         const messageObj = {
           role: message.role,
           content: []
         };
         
-        if (message.content) {
-          if (typeof message.content === 'string') {
-            messageObj.content.push({ 
-              type: 'text', 
-              text: message.content 
-            });
-          } else if (Array.isArray(message.content)) {
-            messageObj.content = message.content;
-          }
+        if (typeof message.content === 'string') {
+          messageObj.content.push({ 
+            type: 'text', 
+            text: message.content 
+          });
+        } else if (Array.isArray(message.content)) {
+          messageObj.content = message.content;
         }
         
         messages.push(messageObj);
@@ -343,7 +354,7 @@ class ClaudeAPIHandler {
     console.log('Получены настройки для API запроса:', settings);
     
     // Используем настройки БЕЗ принудительных значений по умолчанию
-    const modelName = settings.model || 'claude-3-7-sonnet-20250219';
+    const modelName = settings.model || 'claude-3-sonnet-20240229';
     const maxTokens = settings.maxTokens || 4096;
     const temperature = settings.temperature || 0.7;
     const topP = settings.topP || 1.0;
@@ -550,10 +561,11 @@ function register(ipcMainInstance, storageManagerRef = null) {
     }
   });
   
-  // Send message to Claude AI
-  ipcMainInstance.handle('api:sendToClaudeAI', async (_event, { content, attachments = [], history = [] }) => {
+  // Send message to Claude AI - ИСПРАВЛЕНО
+  ipcMainInstance.handle('api:sendToClaudeAI', async (_event, params) => {
     try {
-      return await apiHandler.sendMessageToClaudeAI(content, attachments, history);
+      console.log('IPC handler api:sendToClaudeAI получил:', typeof params, params);
+      return await apiHandler.sendMessageToClaudeAI(params);
     } catch (error) {
       console.error('Claude API error:', error);
       return { error: error.message || 'Unknown error' };

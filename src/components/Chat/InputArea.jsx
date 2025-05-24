@@ -139,60 +139,61 @@ const InputArea = ({
 
   // Оптимизированная отправка с немедленной очисткой поля
   const handleSubmit = useCallback(async (event) => {
-    if (event?.preventDefault) {
-      event.preventDefault();
-    }
-    
-    if (!message.trim() && files.length === 0) return;
-    
-    // НЕМЕДЛЕННО очищаем поле ввода для лучшего UX
-    const messageToSend = message.trim();
-    const filesToSend = [...files];
-    const projectFilesToSend = [...projectFiles];
-    
-    setMessage('');
-    setFiles([]);
-    setError('');
-    
-    try {
-      // Подготавливаем файлы для отправки
-      const uploadedFiles = await Promise.all(
-        filesToSend.map(async (fileData) => {
-          if (fileData.path) {
+  if (event?.preventDefault) {
+    event.preventDefault();
+  }
+  
+  // ВАЖНО: разрешаем отправку файлов проекта даже без текста
+  if (!message.trim() && files.length === 0 && projectFiles.length === 0) return;
+  
+  // НЕМЕДЛЕННО очищаем поле ввода для лучшего UX
+  const messageToSend = message.trim();
+  const filesToSend = [...files];
+  const projectFilesToSend = [...projectFiles];
+  
+  setMessage('');
+  setFiles([]);
+  setError('');
+  
+  try {
+    // Подготавливаем файлы для отправки
+    const uploadedFiles = await Promise.all(
+      filesToSend.map(async (fileData) => {
+        if (fileData.path) {
+          return {
+            name: fileData.name,
+            size: fileData.size,
+            type: fileData.type,
+            path: fileData.path
+          };
+        }
+        
+        if (fileData.file && window.electronAPI) {
+          const result = await window.electronAPI.uploadFile(fileData.file);
+          if (result?.success) {
             return {
               name: fileData.name,
               size: fileData.size,
               type: fileData.type,
-              path: fileData.path
+              path: result.path
             };
           }
-          
-          if (fileData.file && window.electronAPI) {
-            const result = await window.electronAPI.uploadFile(fileData.file);
-            if (result?.success) {
-              return {
-                name: fileData.name,
-                size: fileData.size,
-                type: fileData.type,
-                path: result.path
-              };
-            }
-          }
-          return null;
-        })
-      );
+        }
+        return null;
+      })
+    );
 
-      const validFiles = uploadedFiles.filter(file => file !== null);
-      await onSendMessage(messageToSend, validFiles, projectFilesToSend);
-      
-    } catch (err) {
-      setError('Ошибка при отправке: ' + (err.message || err));
-      // Восстанавливаем данные при ошибке
-      setMessage(messageToSend);
-      setFiles(filesToSend);
-      setTimeout(() => setError(''), 5000);
-    }
-  }, [message, files, projectFiles, onSendMessage]);
+    const validFiles = uploadedFiles.filter(file => file !== null);
+    await onSendMessage(messageToSend, validFiles, projectFilesToSend);
+    
+  } catch (err) {
+    setError('Ошибка при отправке: ' + (err.message || err));
+    // Восстанавливаем данные при ошибке
+    setMessage(messageToSend);
+    setFiles(filesToSend);
+    setTimeout(() => setError(''), 5000);
+  }
+}, [message, files, projectFiles, onSendMessage]);
 
   // Оптимизированные обработчики событий
   const handleKeyDown = useCallback((event) => {

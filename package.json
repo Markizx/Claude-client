@@ -1,7 +1,7 @@
 {
-  "name": "claude-desktop",
+  "name": "smartchat-ai",
   "version": "1.0.0",
-  "description": "Desktop application for Claude AI API with chat and project management",
+  "description": "SmartChat.ai - Advanced AI Chat Application with Claude API integration",
   "main": "build/electron.js",
   "homepage": "./",
   "scripts": {

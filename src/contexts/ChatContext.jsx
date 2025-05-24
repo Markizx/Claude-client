@@ -308,6 +308,12 @@ export const ChatProvider = ({ children }) => {
 
   // ИСПРАВЛЕНО: отправка сообщения с правильной обработкой состояния
   const sendMessage = useCallback(async (content, files = [], projectFiles = []) => {
+    // ВАЖНО: Проверяем, что есть контент или файлы
+    if (!content?.trim() && (!files || files.length === 0) && (!projectFiles || projectFiles.length === 0)) {
+      dispatch({ type: ActionTypes.SET_ERROR, payload: 'Нельзя отправить пустое сообщение' });
+      return null;
+    }
+
     let currentChat = state.activeChat;
     
     // Создаем чат если нужно
@@ -317,7 +323,15 @@ export const ChatProvider = ({ children }) => {
     }
 
     try {
+      dispatch({ type: ActionTypes.SET_LOADING, payload: true });
+      
       if (!window.electronAPI) throw new Error('API недоступен');
+
+      // ВАЖНО: Если нет текста, но есть файлы, добавляем описание
+      let messageContent = content?.trim() || '';
+      if (!messageContent && (files.length > 0 || projectFiles.length > 0)) {
+        messageContent = 'Пожалуйста, проанализируйте прикрепленные файлы.';
+      }
 
       // Подготавливаем файлы сообщения
       const messageAttachments = await Promise.all(
@@ -356,7 +370,7 @@ export const ChatProvider = ({ children }) => {
       const userMessage = {
         id: uuidv4(),
         chatId: currentChat.id,
-        content,
+        content: messageContent,
         role: 'user',
         timestamp: new Date().toISOString(),
         attachments: validAttachments
@@ -380,11 +394,11 @@ export const ChatProvider = ({ children }) => {
       }
       
       // Отправляем в Claude API
-      const claudeResponse = await window.electronAPI.sendToClaudeAI(
-        content,
-        allAttachmentsForAPI,
-        state.messages
-      );
+      const claudeResponse = await window.electronAPI.sendToClaudeAI({
+      content: content,
+      attachments: allAttachmentsForAPI,
+      history: state.messages
+      });
       
       if (claudeResponse?.error) {
         throw new Error(claudeResponse.error);
@@ -410,6 +424,7 @@ export const ChatProvider = ({ children }) => {
         updated_at: new Date().toISOString()
       });
       
+      dispatch({ type: ActionTypes.SET_LOADING, payload: false });
       return { userMessage, assistantMessage };
     } catch (error) {
       console.error('Error sending message:', error);

@@ -44,69 +44,92 @@ export const DynamicThemeProvider = ({ children }) => {
       palette: {
         mode: currentTheme,
         primary: {
-          main: isDark ? '#9d86e9' : '#6e56cf',
-          light: isDark ? '#b8a9f0' : '#9d86e9',
-          dark: isDark ? '#7c5ce0' : '#4c3c9b',
+          main: isDark ? '#00d9ff' : '#6366f1',
+          light: isDark ? '#33e0ff' : '#818cf8',
+          dark: isDark ? '#0099cc' : '#4f46e5',
         },
         secondary: {
-          main: '#ff4081',
-          light: '#ff79b0',
-          dark: '#c60055',
+          main: isDark ? '#ee00ff' : '#ec4899',
+          light: isDark ? '#ff66ff' : '#f472b6',
+          dark: isDark ? '#cc00cc' : '#db2777',
         },
         background: {
-          default: isDark ? '#121212' : '#fefdf8',
-          paper: isDark ? '#1e1e1e' : '#fefdf8',
+          default: isDark ? '#0f0f23' : '#fafbff',
+          paper: isDark ? '#161625' : '#ffffff',
         },
         text: {
-          primary: isDark ? '#ffffff' : '#2d2a26',
-          secondary: isDark ? '#b3b3b3' : '#6b6560',
+          primary: isDark ? '#ffffff' : '#1a202c',
+          secondary: isDark ? '#9ca3af' : '#4b5563',
         },
-        divider: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(107, 101, 96, 0.2)',
+        divider: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(99, 102, 241, 0.1)',
         action: {
-          hover: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(45, 42, 38, 0.04)',
-          selected: isDark ? 'rgba(255, 255, 255, 0.16)' : 'rgba(45, 42, 38, 0.08)',
+          hover: isDark ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.05)',
+          selected: isDark ? 'rgba(99, 102, 241, 0.2)' : 'rgba(99, 102, 241, 0.1)',
         },
         grey: {
-          50: isDark ? '#2d2d2d' : '#f8f6f0',
-          100: isDark ? '#3d3d3d' : '#f0ede3',
-          200: isDark ? '#4d4d4d' : '#e8e3d7',
-          300: isDark ? '#6d6d6d' : '#d4cdc0',
-          400: isDark ? '#8d8d8d' : '#a39a91',
-          500: isDark ? '#adadad' : '#6b6560',
-          600: isDark ? '#b3b3b3' : '#5a534e',
-          700: isDark ? '#c3c3c3' : '#49423d',
-          800: isDark ? '#d3d3d3' : '#38312c',
-          900: isDark ? '#e3e3e3' : '#2d2a26',
+          50: isDark ? '#1e1e2e' : '#f9fafb',
+          100: isDark ? '#2a2a3e' : '#f3f4f6',
+          200: isDark ? '#3b3b4f' : '#e5e7eb',
+          300: isDark ? '#4b4b5f' : '#d1d5db',
+          400: isDark ? '#6b7280' : '#9ca3af',
+          500: isDark ? '#9ca3af' : '#6b7280',
+          600: isDark ? '#b3b3b3' : '#4b5563',
+          700: isDark ? '#c3c3c3' : '#374151',
+          800: isDark ? '#d3d3d3' : '#1f2937',
+          900: isDark ? '#e3e3e3' : '#111827',
         },
       },
       typography: {
         fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
         fontSize: settings?.fontSize || 14,
       },
+      shape: {
+        borderRadius: 15,
+      },
       components: {
         MuiButton: {
           styleOverrides: {
             root: {
               textTransform: 'none',
-              borderRadius: 8,
+              borderRadius: 25,
+              padding: '10px 24px',
+              fontWeight: 500,
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            },
+            contained: {
+              background: isDark 
+                ? 'linear-gradient(135deg, #7c3aed 0%, #ec4899 100%)'
+                : 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+              boxShadow: '0 4px 15px rgba(99, 102, 241, 0.3)',
+              '&:hover': {
+                transform: 'translateY(-2px)',
+                boxShadow: '0 6px 20px rgba(99, 102, 241, 0.4)',
+              },
             },
           },
         },
         MuiPaper: {
           styleOverrides: {
             root: {
-              borderRadius: 12,
-              backgroundImage: 'none', // убираем градиент по умолчанию
-              backgroundColor: isDark ? '#1e1e1e' : '#fefdf8',
-              border: isDark ? 'none' : '1px solid rgba(107, 101, 96, 0.2)',
+              borderRadius: 15,
+              backgroundImage: 'none',
+              backgroundColor: isDark ? 'rgba(22, 22, 37, 0.8)' : 'rgba(255, 255, 255, 0.9)',
+              backdropFilter: 'blur(10px)',
+              border: isDark ? '1px solid rgba(99, 102, 241, 0.2)' : '1px solid rgba(99, 102, 241, 0.1)',
+              boxShadow: isDark 
+                ? '0 8px 32px rgba(0, 0, 0, 0.5)' 
+                : '0 4px 20px rgba(99, 102, 241, 0.1)',
             },
           },
         },
         MuiDrawer: {
           styleOverrides: {
             paper: {
-              borderRight: 'none',
-              backgroundColor: isDark ? '#1e1e1e' : '#f8f6f0',
+              borderRight: isDark ? '1px solid rgba(99, 102, 241, 0.2)' : '1px solid rgba(99, 102, 241, 0.1)',
+              backgroundColor: isDark ? '#161625' : '#f3f4ff',
+              backgroundImage: isDark
+                ? 'radial-gradient(circle at top left, rgba(0, 217, 255, 0.05) 0%, transparent 50%)'
+                : 'radial-gradient(circle at top left, rgba(99, 102, 241, 0.05) 0%, transparent 50%)',
             },
           },
         },
@@ -114,15 +137,29 @@ export const DynamicThemeProvider = ({ children }) => {
           styleOverrides: {
             root: {
               '& .MuiOutlinedInput-root': {
-                backgroundColor: isDark ? '#2d2d2d' : '#fefdf8',
+                borderRadius: 15,
+                backgroundColor: isDark ? 'rgba(30, 30, 46, 0.5)' : 'rgba(255, 255, 255, 0.7)',
+                backdropFilter: 'blur(10px)',
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                 '& fieldset': {
-                  borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(107, 101, 96, 0.2)',
+                  borderColor: isDark ? 'rgba(99, 102, 241, 0.3)' : 'rgba(99, 102, 241, 0.2)',
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                 },
-                '&:hover fieldset': {
-                  borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(107, 101, 96, 0.3)',
+                '&:hover': {
+                  backgroundColor: isDark ? 'rgba(30, 30, 46, 0.7)' : 'rgba(255, 255, 255, 0.9)',
+                  '& fieldset': {
+                    borderColor: isDark ? 'rgba(99, 102, 241, 0.5)' : 'rgba(99, 102, 241, 0.3)',
+                  },
                 },
-                '&.Mui-focused fieldset': {
-                  borderColor: isDark ? '#9d86e9' : '#6e56cf',
+                '&.Mui-focused': {
+                  backgroundColor: isDark ? 'rgba(30, 30, 46, 0.8)' : '#ffffff',
+                  '& fieldset': {
+                    borderColor: isDark ? '#00d9ff' : '#6366f1',
+                    borderWidth: 2,
+                    boxShadow: isDark 
+                      ? '0 0 0 3px rgba(0, 217, 255, 0.2)' 
+                      : '0 0 0 3px rgba(99, 102, 241, 0.2)',
+                  },
                 },
               },
             },
@@ -131,29 +168,76 @@ export const DynamicThemeProvider = ({ children }) => {
         MuiChip: {
           styleOverrides: {
             root: {
-              backgroundColor: isDark ? '#2d2d2d' : '#f0ede3',
-              border: isDark ? 'none' : '1px solid rgba(107, 101, 96, 0.2)',
-              color: isDark ? '#ffffff' : '#2d2a26',
+              borderRadius: 25,
+              backgroundColor: isDark ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.05)',
+              border: isDark ? '1px solid rgba(99, 102, 241, 0.3)' : '1px solid rgba(99, 102, 241, 0.2)',
+              color: isDark ? '#ffffff' : '#1a202c',
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              '&:hover': {
+                backgroundColor: isDark ? 'rgba(99, 102, 241, 0.2)' : 'rgba(99, 102, 241, 0.1)',
+                transform: 'scale(1.05)',
+              },
             },
-            outlined: {
-              backgroundColor: 'transparent',
-              borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(107, 101, 96, 0.2)',
+          },
+        },
+        MuiIconButton: {
+          styleOverrides: {
+            root: {
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              '&:hover': {
+                backgroundColor: isDark ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.05)',
+                transform: 'scale(1.1)',
+              },
+            },
+          },
+        },
+        MuiListItemButton: {
+          styleOverrides: {
+            root: {
+              borderRadius: 15,
+              margin: '4px 8px',
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              '&:hover': {
+                backgroundColor: isDark ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.05)',
+              },
+              '&.Mui-selected': {
+                backgroundColor: isDark ? 'rgba(99, 102, 241, 0.2)' : 'rgba(99, 102, 241, 0.1)',
+                borderLeft: `3px solid ${isDark ? '#00d9ff' : '#6366f1'}`,
+                '&:hover': {
+                  backgroundColor: isDark ? 'rgba(99, 102, 241, 0.3)' : 'rgba(99, 102, 241, 0.15)',
+                },
+              },
             },
           },
         },
         MuiAlert: {
           styleOverrides: {
             root: {
-              backgroundColor: isDark ? '#2d2d2d' : '#f8f6f0',
-              border: isDark ? 'none' : '1px solid rgba(107, 101, 96, 0.2)',
+              borderRadius: 15,
+              backgroundColor: isDark ? 'rgba(30, 30, 46, 0.8)' : 'rgba(255, 255, 255, 0.9)',
+              border: isDark ? '1px solid rgba(99, 102, 241, 0.2)' : '1px solid rgba(99, 102, 241, 0.1)',
+            },
+          },
+        },
+        MuiDialog: {
+          styleOverrides: {
+            paper: {
+              borderRadius: 20,
+              backgroundColor: isDark ? 'rgba(22, 22, 37, 0.95)' : 'rgba(255, 255, 255, 0.98)',
+              backdropFilter: 'blur(20px)',
+              border: isDark ? '1px solid rgba(99, 102, 241, 0.3)' : '1px solid rgba(99, 102, 241, 0.1)',
+              boxShadow: isDark 
+                ? '0 25px 50px rgba(0, 0, 0, 0.7)' 
+                : '0 25px 50px rgba(99, 102, 241, 0.15)',
             },
           },
         },
         MuiCssBaseline: {
           styleOverrides: {
             body: {
-              backgroundColor: isDark ? '#121212' : '#fefdf8',
-              color: isDark ? '#ffffff' : '#2d2a26',
+              backgroundColor: isDark ? '#0f0f23' : '#fafbff',
+              color: isDark ? '#ffffff' : '#1a202c',
+              scrollbarColor: isDark ? '#2a2a3e #161625' : '#e5e7eb #f3f4f6',
             },
           },
         },
@@ -172,20 +256,21 @@ export const DynamicThemeProvider = ({ children }) => {
     const root = document.documentElement;
     
     if (currentTheme === 'dark') {
-      root.style.setProperty('--background-primary', '#121212');
-      root.style.setProperty('--background-secondary', '#1e1e1e');
-      root.style.setProperty('--background-tertiary', '#2d2d2d');
+      // Темная тема с неоновыми эффектами
+      root.style.setProperty('--background-primary', '#0f0f23');
+      root.style.setProperty('--background-secondary', '#161625');
+      root.style.setProperty('--background-tertiary', '#1e1e2e');
       root.style.setProperty('--text-primary', '#ffffff');
-      root.style.setProperty('--text-secondary', '#b3b3b3');
-      root.style.setProperty('--border-color', 'rgba(255, 255, 255, 0.12)');
+      root.style.setProperty('--text-secondary', '#9ca3af');
+      root.style.setProperty('--border-color', 'rgba(255, 255, 255, 0.1)');
     } else {
-      // Бежевая светлая тема
-      root.style.setProperty('--background-primary', '#fefdf8');
-      root.style.setProperty('--background-secondary', '#f8f6f0');
-      root.style.setProperty('--background-tertiary', '#f0ede3');
-      root.style.setProperty('--text-primary', '#2d2a26');
-      root.style.setProperty('--text-secondary', '#6b6560');
-      root.style.setProperty('--border-color', 'rgba(107, 101, 96, 0.2)');
+      // Светлая тема с градиентами
+      root.style.setProperty('--background-primary', '#fafbff');
+      root.style.setProperty('--background-secondary', '#f3f4ff');
+      root.style.setProperty('--background-tertiary', '#e8ebff');
+      root.style.setProperty('--text-primary', '#1a202c');
+      root.style.setProperty('--text-secondary', '#4b5563');
+      root.style.setProperty('--border-color', 'rgba(99, 102, 241, 0.1)');
     }
 
     // Устанавливаем размер шрифта

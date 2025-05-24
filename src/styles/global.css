@@ -13,41 +13,17 @@ html, body, #root {
 }
 
 :root {
-  /* Базовые CSS переменные для тем */
-  --background-primary: #fefdf8;
-  --background-secondary: #f8f6f0;
-  --background-tertiary: #f0ede3;
-  --text-primary: #2d2a26;
-  --text-secondary: #6b6560;
-  --text-disabled: #a39a91;
-  --border-color: rgba(107, 101, 96, 0.2);
-  --shadow: rgba(45, 42, 38, 0.1);
+  /* Базовые CSS переменные */
   --app-font-size: 14px;
+  --border-radius: 15px;
+  --border-radius-sm: 10px;
+  --border-radius-lg: 25px;
+  --transition: all 0.2s ease; /* Ускорили анимации */
 }
 
-/* Темная тема */
-[data-theme="dark"] {
-  --background-primary: #121212;
-  --background-secondary: #1e1e1e;
-  --background-tertiary: #2d2d2d;
-  --text-primary: #ffffff;
-  --text-secondary: #b3b3b3;
-  --text-disabled: #666666;
-  --border-color: rgba(255, 255, 255, 0.12);
-  --shadow: rgba(0, 0, 0, 0.5);
-}
-
-/* Бежевая светлая тема */
-[data-theme="light"] {
-  --background-primary: #fefdf8;
-  --background-secondary: #f8f6f0;
-  --background-tertiary: #f0ede3;
-  --text-primary: #2d2a26;
-  --text-secondary: #6b6560;
-  --text-disabled: #a39a91;
-  --border-color: rgba(107, 101, 96, 0.2);
-  --shadow: rgba(45, 42, 38, 0.1);
-}
+/* Импорт тем */
+@import './themes/dark.css';
+@import './themes/light.css';
 
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
@@ -55,10 +31,32 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  transition: background-color 0.3s ease, color 0.3s ease;
-  background-color: var(--background-primary) !important;
-  color: var(--text-primary) !important;
+  transition: background-color 0.2s ease, color 0.2s ease; /* Только необходимые свойства */
+  background: var(--background-primary);
+  color: var(--text-primary);
   font-size: var(--app-font-size);
+}
+
+/* Убираем тяжелые градиенты на body - переносим их в отдельный элемент */
+.app-background {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.5; /* Уменьшаем интенсивность */
+}
+
+[data-theme="dark"] .app-background {
+  background: radial-gradient(circle at 20% 20%, rgba(0, 217, 255, 0.05) 0%, transparent 50%),
+              radial-gradient(circle at 80% 80%, rgba(238, 0, 255, 0.03) 0%, transparent 50%);
+}
+
+[data-theme="light"] .app-background {
+  background: radial-gradient(circle at 20% 20%, rgba(59, 130, 246, 0.03) 0%, transparent 50%),
+              radial-gradient(circle at 80% 80%, rgba(236, 72, 153, 0.02) 0%, transparent 50%);
 }
 
 code {
@@ -67,8 +65,8 @@ code {
 
 /* Кастомные скроллбары */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -77,30 +75,27 @@ code {
 
 ::-webkit-scrollbar-thumb {
   background: var(--border-color);
-  border-radius: 3px;
-  transition: background 0.2s ease;
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-secondary);
 }
 
-/* Анимации */
+/* Упрощенные анимации */
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(10px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
 @keyframes slideInFromLeft {
   from {
     opacity: 0;
-    transform: translateX(-20px);
+    transform: translateX(-10px); /* Уменьшили дистанцию */
   }
   to {
     opacity: 1;
@@ -111,7 +106,7 @@ code {
 @keyframes slideInFromRight {
   from {
     opacity: 0;
-    transform: translateX(20px);
+    transform: translateX(10px); /* Уменьшили дистанцию */
   }
   to {
     opacity: 1;
@@ -120,29 +115,40 @@ code {
 }
 
 @keyframes pulse {
-  0% {
+  0%, 100% {
     opacity: 1;
   }
   50% {
-    opacity: 0.5;
-  }
-  100% {
-    opacity: 1;
+    opacity: 0.7; /* Менее агрессивная пульсация */
   }
 }
+
+/* Убираем тяжелый neonGlow эффект */
 
 /* Стили для артефактов */
 .artifact {
-  border-radius: 12px;
+  border-radius: var(--border-radius);
   margin: 16px 0;
   overflow: hidden;
   border: 1px solid var(--border-color);
-  transition: all 0.2s ease;
-  background-color: var(--background-primary);
+  transition: transform 0.2s ease, box-shadow 0.2s ease; /* Только необходимые свойства */
+  background: var(--background-primary);
+}
+
+[data-theme="dark"] .artifact {
+  background: rgba(30, 30, 46, 0.8);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+[data-theme="light"] .artifact {
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 2px 10px var(--shadow); /* Уменьшили тень */
 }
 
 .artifact:hover {
-  box-shadow: 0 4px 12px var(--shadow);
+  transform: translateY(-1px); /* Уменьшили движение */
+  box-shadow: 0 4px 20px var(--shadow); /* Уменьшили тень */
 }
 
 .artifact-header {
@@ -150,7 +156,7 @@ code {
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  background-color: var(--background-tertiary);
+  background: var(--glass-effect);
   border-bottom: 1px solid var(--border-color);
 }
 
@@ -158,33 +164,22 @@ code {
   padding: 16px;
   overflow: auto;
   max-height: 600px;
-  background-color: var(--background-primary);
-}
-
-.artifact-title {
-  font-weight: 500;
-  font-size: 0.95rem;
-  color: var(--text-primary);
-}
-
-.artifact-actions {
-  display: flex;
-  gap: 8px;
+  background: var(--background-primary);
 }
 
 /* Стили для сообщений чата */
 .message {
   display: flex;
   margin-bottom: 16px;
-  animation: fadeIn 0.3s ease-out;
+  animation: fadeIn 0.2s ease-out; /* Ускорили анимацию */
 }
 
 .message-content {
-  padding: 12px 16px;
-  border-radius: 18px;
+  padding: 12px 18px;
+  border-radius: var(--border-radius-lg);
   max-width: 75%;
   word-wrap: break-word;
-  transition: all 0.2s ease;
+  transition: transform 0.2s ease; /* Упростили */
 }
 
 .user-message {
@@ -192,24 +187,34 @@ code {
 }
 
 .user-message .message-content {
-  background-color: #6e56cf;
+  background: var(--gradient-button);
   color: white;
   border-bottom-right-radius: 6px;
-  animation: slideInFromRight 0.3s ease-out;
+  animation: slideInFromRight 0.2s ease-out;
+  box-shadow: 0 2px 10px rgba(99, 102, 241, 0.3); /* Уменьшили тень */
 }
 
-.assistant-message .message-content {
-  background-color: var(--background-tertiary);
+[data-theme="dark"] .assistant-message .message-content {
+  background: rgba(30, 30, 46, 0.8);
   color: var(--text-primary);
+  border: 1px solid rgba(99, 102, 241, 0.3);
   border-bottom-left-radius: 6px;
-  animation: slideInFromLeft 0.3s ease-out;
+  animation: slideInFromLeft 0.2s ease-out;
+}
+
+[data-theme="light"] .assistant-message .message-content {
+  background: white;
+  color: var(--text-primary);
   border: 1px solid var(--border-color);
+  border-bottom-left-radius: 6px;
+  animation: slideInFromLeft 0.2s ease-out;
+  box-shadow: 0 2px 8px var(--shadow); /* Уменьшили тень */
 }
 
 /* Стили для кода в сообщениях */
 .message-content pre {
-  background-color: var(--background-tertiary);
-  border-radius: 8px;
+  background: var(--background-tertiary);
+  border-radius: var(--border-radius-sm);
   padding: 12px;
   overflow-x: auto;
   margin: 8px 0;
@@ -219,234 +224,153 @@ code {
 }
 
 .message-content code {
-  background-color: var(--background-tertiary);
+  background: var(--background-tertiary);
   padding: 2px 6px;
   border-radius: 4px;
   font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
   font-size: 0.875rem;
-  color: var(--text-primary);
+  color: var(--accent-primary);
 }
 
-/* Стили для таблиц */
-.message-content table {
-  border-collapse: collapse;
-  margin: 12px 0;
-  width: 100%;
-  border-radius: 8px;
+/* Кнопки с градиентом */
+.gradient-button {
+  background: var(--gradient-button);
+  color: white;
+  border: none;
+  border-radius: var(--border-radius-lg);
+  padding: 12px 24px;
+  font-weight: 500;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  cursor: pointer;
+  position: relative;
   overflow: hidden;
+}
+
+.gradient-button:hover {
+  transform: translateY(-1px); /* Уменьшили движение */
+  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4); /* Уменьшили тень */
+}
+
+/* Стеклянные эффекты - без blur для производительности */
+.glass-effect {
+  background: var(--glass-effect);
   border: 1px solid var(--border-color);
-}
-
-.message-content th,
-.message-content td {
-  border: 1px solid var(--border-color);
-  padding: 8px 12px;
-  text-align: left;
-  color: var(--text-primary);
-}
-
-.message-content th {
-  background-color: var(--background-tertiary);
-  font-weight: 600;
-}
-
-/* Стили для цитат */
-.message-content blockquote {
-  border-left: 4px solid #6e56cf;
-  margin: 12px 0;
-  padding: 12px 16px;
-  background-color: var(--background-tertiary);
-  border-radius: 0 8px 8px 0;
-  font-style: italic;
-  color: var(--text-secondary);
-}
-
-/* Стили для списков */
-.message-content ul,
-.message-content ol {
-  margin: 8px 0;
-  padding-left: 24px;
-  color: var(--text-primary);
-}
-
-.message-content li {
-  margin-bottom: 4px;
-  line-height: 1.6;
+  border-radius: var(--border-radius);
 }
 
 /* Анимация загрузки */
 .loading-dots {
-  display: inline-block;
+  display: inline-flex;
+  gap: 4px;
 }
 
-.loading-dots::after {
-  content: '';
-  animation: dots 1.5s infinite;
+.loading-dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  animation: pulse 1.5s ease-in-out infinite;
 }
 
-@keyframes dots {
-  0%, 20% {
-    content: '.';
-  }
-  40% {
-    content: '..';
-  }
-  60% {
-    content: '...';
-  }
-  80%, 100% {
-    content: '';
-  }
+.loading-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.loading-dots span:nth-child(3) {
+  animation-delay: 0.4s;
 }
 
 /* Стили для drag and drop */
 .drop-zone {
   border: 2px dashed var(--border-color);
-  border-radius: 12px;
+  border-radius: var(--border-radius);
   padding: 24px;
   text-align: center;
   color: var(--text-secondary);
   transition: all 0.2s ease;
-  background-color: var(--background-secondary);
+  background: var(--background-secondary);
 }
 
 .drop-zone.active {
-  border-color: #6e56cf;
-  background-color: rgba(110, 86, 207, 0.1);
-  color: #6e56cf;
+  border-color: var(--accent-primary);
+  background: var(--background-hover);
+  color: var(--accent-primary);
 }
 
-/* Компактный режим */
-[data-compact-mode="true"] .message {
-  margin-bottom: 8px;
+/* Material-UI переопределения для новой темы */
+.MuiDrawer-paper {
+  background: var(--background-secondary) !important;
+  color: var(--text-primary) !important;
+  border-right: 1px solid var(--border-color) !important;
 }
 
-[data-compact-mode="true"] .message-content {
-  padding: 8px 12px;
-  font-size: 0.9em;
+.MuiPaper-root {
+  background: var(--background-primary) !important;
+  color: var(--text-primary) !important;
+  border-radius: var(--border-radius) !important;
 }
 
-[data-compact-mode="true"] .artifact {
-  margin: 8px 0;
+[data-theme="dark"] .MuiPaper-root {
+  background: rgba(22, 22, 37, 0.8) !important;
+  border: 1px solid rgba(99, 102, 241, 0.2) !important;
 }
 
-/* Утилиты */
-.animate-in {
-  animation: fadeIn 0.3s ease-out;
+[data-theme="light"] .MuiPaper-root {
+  background: rgba(255, 255, 255, 0.9) !important;
+  box-shadow: 0 2px 10px var(--shadow) !important; /* Уменьшили тень */
 }
 
-.slide-in-left {
-  animation: slideInFromLeft 0.3s ease-out;
+.MuiButton-root {
+  border-radius: var(--border-radius-lg) !important;
+  transition: all 0.2s ease !important;
+  text-transform: none !important;
 }
 
-.slide-in-right {
-  animation: slideInFromRight 0.3s ease-out;
+.MuiButton-contained {
+  background: var(--gradient-button) !important;
+  box-shadow: 0 2px 10px rgba(99, 102, 241, 0.3) !important; /* Уменьшили тень */
 }
 
-.pulse-animation {
-  animation: pulse 1.5s infinite;
+.MuiButton-contained:hover {
+  transform: translateY(-1px); /* Уменьшили движение */
+  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4) !important; /* Уменьшили тень */
 }
 
-/* Адаптивность */
+/* Отключаем тяжелые эффекты для слабых компьютеров */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+  
+  .gradient-button:hover,
+  .MuiButton-contained:hover,
+  .artifact:hover {
+    transform: none !important;
+  }
+}
+
+/* Упрощаем backdrop-filter для производительности */
+@supports not (backdrop-filter: blur(10px)) {
+  .glass-effect,
+  [data-theme="dark"] .MuiPaper-root {
+    backdrop-filter: none !important;
+    background: var(--background-tertiary) !important;
+  }
+}
+
+/* Оптимизация для мобильных устройств */
 @media (max-width: 768px) {
   .message-content {
     max-width: 90%;
   }
   
-  .artifact-content {
-    padding: 12px;
+  :root {
+    --app-font-size: 13px;
   }
   
-  .artifact-header {
-    padding: 8px 12px;
-  }
-}
-
-/* Доступность */
-@media (prefers-reduced-motion: reduce) {
+  /* Отключаем тени на мобильных для производительности */
   * {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    box-shadow: none !important;
   }
-}
-
-/* Высокий контраст */
-@media (prefers-contrast: high) {
-  .message-content {
-    border: 2px solid;
-  }
-  
-  .user-message .message-content {
-    border-color: white;
-  }
-  
-  .assistant-message .message-content {
-    border-color: var(--border-color);
-  }
-}
-
-/* Принудительные стили для Material-UI компонентов */
-.MuiDrawer-paper {
-  background-color: var(--background-secondary) !important;
-  color: var(--text-primary) !important;
-}
-
-.MuiPaper-root {
-  background-color: var(--background-primary) !important;
-  color: var(--text-primary) !important;
-}
-
-.MuiTypography-root {
-  color: inherit !important;
-}
-
-.MuiButton-root {
-  transition: all 0.2s ease !important;
-}
-
-/* Стили для бежевой темы */
-[data-theme="light"] .MuiPaper-root {
-  background-color: var(--background-primary) !important;
-  border: 1px solid var(--border-color) !important;
-}
-
-[data-theme="light"] .MuiButton-outlined {
-  border-color: var(--border-color) !important;
-  color: var(--text-primary) !important;
-}
-
-[data-theme="light"] .MuiButton-outlined:hover {
-  background-color: var(--background-tertiary) !important;
-  border-color: var(--text-secondary) !important;
-}
-
-[data-theme="light"] .MuiTextField-root .MuiOutlinedInput-root {
-  background-color: var(--background-primary) !important;
-}
-
-[data-theme="light"] .MuiTextField-root .MuiOutlinedInput-notchedOutline {
-  border-color: var(--border-color) !important;
-}
-
-[data-theme="light"] .MuiChip-root {
-  background-color: var(--background-tertiary) !important;
-  color: var(--text-primary) !important;
-  border: 1px solid var(--border-color) !important;
-}
-
-[data-theme="light"] .MuiAlert-root {
-  background-color: var(--background-secondary) !important;
-  border: 1px solid var(--border-color) !important;
-}
-
-/* Стили для артефактов в бежевой теме */
-[data-theme="light"] .artifact {
-  background-color: var(--background-primary) !important;
-  border: 1px solid var(--border-color) !important;
-}
-
-[data-theme="light"] .artifact-header {
-  background-color: var(--background-tertiary) !important;
-  border-bottom: 1px solid var(--border-color) !important;
 }

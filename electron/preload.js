@@ -94,9 +94,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveFileDialog: (defaultPath, filters) => ipcRenderer.invoke('files:saveDialog', defaultPath, filters),
   createTempFile: (name, data) => ipcRenderer.invoke('files:createTempFile', { name, data }),
   
-  // Claude AI operations
-  sendToClaudeAI: (content, attachments, history) => 
-    ipcRenderer.invoke('api:sendToClaudeAI', { content, attachments, history }),
+  // Claude AI operations - ИСПРАВЛЕНО!
+  sendToClaudeAI: (params) => {
+    // Если передаются отдельные параметры, собираем их в объект
+    if (arguments.length === 3) {
+      const [content, attachments, history] = arguments;
+      console.log('preload: sendToClaudeAI вызван с 3 параметрами, конвертируем в объект');
+      return ipcRenderer.invoke('api:sendToClaudeAI', { content, attachments, history });
+    }
+    // Если уже объект
+    console.log('preload: sendToClaudeAI вызван с объектом:', params);
+    return ipcRenderer.invoke('api:sendToClaudeAI', params);
+  },
   
   // Settings operations
   getSettings: () => {
